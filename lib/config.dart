@@ -160,7 +160,7 @@ const CatForm kDefaultForm = CatForm('التخصص', [
 
 /// حقول التواصل — مشتركة بين جميع الأقسام
 const List<FormFieldDef> kCommonFields = [
-  FormFieldDef('wa', 'واتساب', Icons.whatsapp, link: 'wa', color: Color(0xFF25D366)),
+  FormFieldDef('wa', 'واتساب', Icons.chat, link: 'wa', color: Color(0xFF25D366)),
   FormFieldDef('tg', 'تيليغرام', Icons.telegram, link: 'tg', color: Color(0xFF29A9EB)),
   FormFieldDef('fb', 'فيسبوك', Icons.facebook, link: 'fb', color: Color(0xFF1877F2)),
   FormFieldDef('ig', 'إنستغرام', Icons.camera_alt, link: 'ig', color: Color(0xFFE1306C)),
