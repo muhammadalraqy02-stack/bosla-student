@@ -17,6 +17,8 @@ jobs:
     name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -68,3 +70,17 @@ jobs:
           path: |
             build/app/outputs/flutter-apk/app-debug.apk
             build/app/outputs/flutter-apk/app-release.apk
+
+      # ينشر نسخة release كملف APK مباشر في صفحة Releases
+      # رابط ثابت لآخر نسخة: https://github.com/<owner>/<repo>/releases/latest/download/bosla-student.apk
+      - name: Publish APK to Releases
+        if: github.event_name != 'pull_request' && steps.release.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk bosla-student.apk
+          gh release create "build-${{ github.run_number }}" bosla-student.apk \
+            --target "$GITHUB_SHA" \
+            --title "بوصلة الطالب — بناء ${{ github.run_number }}" \
+            --notes "$(flutter --version | head -1) — commit ${GITHUB_SHA::7}" \
+            --latest
