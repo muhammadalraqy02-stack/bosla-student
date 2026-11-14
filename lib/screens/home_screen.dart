@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../admin/admin_entry.dart';
 import '../app_state.dart';
 import '../config.dart';
 import '../models.dart';
@@ -72,7 +73,12 @@ class _HomeScreenState extends State<HomeScreen> {
             titleSpacing: 14,
             title: Row(
               children: [
-                _Logo(size: 42),
+                // 5 ضغطات متتالية على الشعار تفتح دخول الإدارة (مثل نسخة الويب)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => adminSecretTap(context),
+                  child: _Logo(size: 42),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
