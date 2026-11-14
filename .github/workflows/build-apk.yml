@@ -71,6 +71,20 @@ jobs:
             build/app/outputs/flutter-apk/app-debug.apk
             build/app/outputs/flutter-apk/app-release.apk
 
+      # يفحص سلامة الـ APK وتوقيعه قبل النشر (يطبع النتائج في سجل البناء)
+      - name: Verify APK
+        if: steps.release.outcome == 'success'
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "build-tools: $BT"
+          ls -la build/app/outputs/flutter-apk/
+          sha256sum "$APK"
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package|sdkVersion|native-code|application-label:" || true
+          "$BT/zipalign" -c -P 16 4 "$APK" && echo "zipalign OK" || echo "zipalign FAILED"
+          unzip -l "$APK" | grep -E "META-INF|lib/" | head -20
+          "$BT/apksigner" verify --verbose --print-certs "$APK"
+
       # ينشر نسخة release كملف APK مباشر في صفحة Releases
       # رابط ثابت لآخر نسخة: https://github.com/<owner>/<repo>/releases/latest/download/bosla-student.apk
       - name: Publish APK to Releases
