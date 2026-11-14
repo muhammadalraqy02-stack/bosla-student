@@ -25,11 +25,23 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        // مفتاح تجريبي ثابت (android/app/bosla-test.jks) حتى تتحدّث كل نسخة فوق السابقة.
+        // للتجربة فقط — قبل النشر على Google Play أنشئ مفتاح توقيع خاصاً (راجع README).
+        create("test") {
+            storeFile = file("bosla-test.jks")
+            storePassword = "bosla2026"
+            keyAlias = "bosla"
+            keyPassword = "bosla2026"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
     buildTypes {
         release {
-            // للتجربة فقط: يُوقَّع إصدار release بمفتاح debug.
-            // قبل النشر على Google Play أنشئ مفتاح توقيع خاصاً (راجع README).
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("test")
         }
     }
 }

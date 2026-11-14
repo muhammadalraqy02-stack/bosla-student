@@ -80,7 +80,7 @@ jobs:
           echo "build-tools: $BT"
           ls -la build/app/outputs/flutter-apk/
           sha256sum "$APK"
-          "$BT/aapt2" dump badging "$APK" | grep -E "^package|sdkVersion|native-code|application-label:" || true
+          "$BT/aapt2" dump badging "$APK" | grep -i -E "^package|sdkVersion|native-code|application-label:" || true
           "$BT/zipalign" -c -P 16 4 "$APK" && echo "zipalign OK" || echo "zipalign FAILED"
           unzip -l "$APK" | grep -E "META-INF|lib/" | head -20
           "$BT/apksigner" verify --verbose --print-certs "$APK"
@@ -98,3 +98,28 @@ jobs:
             --title "بوصلة الطالب — بناء ${{ github.run_number }}" \
             --notes "$(flutter --version | head -1) — commit ${GITHUB_SHA::7}" \
             --latest
+
+      # اختبار تثبيت وتشغيل فعلي على محاكي Android 12 — يطبع سبب الفشل الحقيقي إن وُجد
+      - name: Enable KVM
+        if: steps.release.outcome == 'success'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install test on Android 12 emulator
+        if: steps.release.outcome == 'success'
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          arch: x86_64
+          target: default
+          disable-animations: true
+          script: |
+            adb install -r build/app/outputs/flutter-apk/app-release.apk || (adb logcat -d | grep -i -E "PackageManager|PackageInstaller|INSTALL_|apk" | tail -60; exit 1)
+            adb shell pm list packages | grep bosla
+            adb shell monkey -p com.bosla2026.app -c android.intent.category.LAUNCHER 1
+            sleep 20
+            adb shell pidof com.bosla2026.app && echo APP_RUNNING || echo APP_NOT_RUNNING
+            adb logcat -d -s AndroidRuntime:E flutter:V | tail -40
