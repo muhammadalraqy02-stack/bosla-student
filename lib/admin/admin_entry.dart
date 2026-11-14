@@ -5,14 +5,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app_state.dart';
+import '../config.dart';
 import '../ui.dart';
 import '../utils.dart';
 import '../widgets/common.dart';
 import 'admin_auth.dart';
 import 'admin_cards.dart';
 import 'admin_misc.dart';
+import 'admin_sections_a.dart';
+import 'admin_sections_b.dart';
 import 'admin_store.dart';
+import 'admin_ui.dart';
 
 int _taps = 0;
 Timer? _tapTimer;
@@ -306,17 +309,45 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         ),
                       ],
                       const SizedBox(height: 18),
-                      _sectionTitle(context, 'الأقسام والعناصر'),
+                      _sectionTitle(context, 'لوحة المعلومات'),
                       const SizedBox(height: 8),
-                      for (final c in AppState.I.data.categories)
+                      const AdminDashboardWidgets(),
+                      const SizedBox(height: 6),
+                      _sectionTitle(context, 'المحتوى'),
+                      const SizedBox(height: 8),
+                      _tile(
+                        context,
+                        icon: Icons.table_rows_outlined,
+                        color: const Color(0xFF10275E),
+                        title: 'كل المحتوى',
+                        sub: '${fmtNum(s.allCards.length)} عنصر — بحث وفلترة حسب القسم والحالة',
+                        onTap: () => _go(context, const AdminContentScreen()),
+                      ),
+                      for (final c in s.categoryList)
                         _tile(
                           context,
-                          icon: c.iconData,
-                          color: c.accent,
-                          title: c.name,
-                          sub: '${fmtNum(s.countOf(c.key))} عنصر',
-                          onTap: () => _go(context, AdminCardsScreen(catKey: c.key)),
+                          icon: iconFromFa(str(c['icon'])),
+                          color: hexColor(s.tintOf(c)[1]),
+                          title: str(c['name']),
+                          sub: '${fmtNum(s.countOf(str(c['key'])))} عنصر',
+                          onTap: () => _go(context, AdminCardsScreen(catKey: str(c['key']))),
                         ),
+                      _tile(
+                        context,
+                        icon: Icons.category_outlined,
+                        color: const Color(0xFF334155),
+                        title: 'إدارة الأقسام',
+                        sub: '${fmtNum(s.categories.length)} قسم — الاسم والأيقونة واللون والصورة والترتيب',
+                        onTap: () => _go(context, const AdminCategoriesScreen()),
+                      ),
+                      _tile(
+                        context,
+                        icon: Icons.map_outlined,
+                        color: const Color(0xFF0F9D6E),
+                        title: 'المحافظات والمراكز',
+                        sub: '${fmtNum(s.geo.length)} محافظة',
+                        onTap: () => _go(context, const AdminGeoScreen()),
+                      ),
                       const SizedBox(height: 14),
                       _sectionTitle(context, 'المتابعة والتواصل'),
                       const SizedBox(height: 8),
@@ -339,11 +370,62 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                       _tile(
                         context,
+                        icon: Icons.campaign_outlined,
+                        color: const Color(0xFFDB2777),
+                        title: 'اللوحات الإعلانية',
+                        sub: '${fmtNum(s.ads.length)} لوحة — ورسالة الترحيب',
+                        onTap: () => _go(context, const AdminAdsScreen()),
+                      ),
+                      _tile(
+                        context,
+                        icon: Icons.insights_outlined,
+                        color: const Color(0xFF8B5CF6),
+                        title: 'الإحصائيات',
+                        sub: 'أرقام الواجهة وتوزيع المحتوى والعدادات',
+                        onTap: () => _go(context, const AdminStatsScreen()),
+                      ),
+                      const SizedBox(height: 14),
+                      _sectionTitle(context, 'النظام'),
+                      const SizedBox(height: 8),
+                      _tile(
+                        context,
+                        icon: Icons.storage_outlined,
+                        color: const Color(0xFFF2711C),
+                        title: 'قواعد البيانات',
+                        sub: 'Firebase و Supabase والنسخ الاحتياطي',
+                        onTap: () => _go(context, const AdminDatabaseScreen()),
+                      ),
+                      _tile(
+                        context,
                         icon: Icons.settings_outlined,
                         color: const Color(0xFF64748B),
                         title: 'الإعدادات',
-                        sub: 'هوية التطبيق، واتساب الإدارة، عن التطبيق',
+                        sub: 'هوية المنصة، التواصل، الخلفيات والمظهر',
                         onTap: () => _go(context, const AdminSettingsScreen()),
+                      ),
+                      _tile(
+                        context,
+                        icon: Icons.manage_accounts_outlined,
+                        color: const Color(0xFF5B5BD6),
+                        title: 'المستخدمون',
+                        sub: '${fmtNum(s.users.length)} حساب إداري',
+                        onTap: () => _go(context, const AdminUsersScreen()),
+                      ),
+                      _tile(
+                        context,
+                        icon: Icons.photo_library_outlined,
+                        color: const Color(0xFF0EA5E9),
+                        title: 'مكتبة الوسائط',
+                        sub: 'الصور المرفوعة إلى Supabase',
+                        onTap: () => _go(context, const AdminMediaScreen()),
+                      ),
+                      _tile(
+                        context,
+                        icon: Icons.history,
+                        color: const Color(0xFF94A3B8),
+                        title: 'سجل النشاطات',
+                        sub: '${fmtNum(s.activity.length)} نشاط',
+                        onTap: () => _go(context, const AdminActivityScreen()),
                       ),
                       const SizedBox(height: 14),
                       _sectionTitle(context, 'آخر النشاطات'),
@@ -353,7 +435,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           padding: const EdgeInsets.all(16),
                           child: Text('السجل فارغ.', style: TextStyle(color: p.muted)),
                         ),
-                      for (final a in s.activityList.take(15))
+                      for (final a in s.activityList.take(4))
                         ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,

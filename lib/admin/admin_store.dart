@@ -5,10 +5,16 @@
 // اللوحة تعمل على البيانات الخام كما هي في فايربيس حتى لا يضيع أي حقل لا يعرفه التطبيق.
 
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
+import 'package:crypto/crypto.dart';
+import 'package:file_selector/file_selector.dart' as fs;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../api.dart';
 import '../app_state.dart';
@@ -16,8 +22,13 @@ import '../config.dart';
 import '../utils.dart';
 import 'admin_auth.dart';
 
+part 'admin_store_ops.dart';
+
 /// صورة العنصر الافتراضية عند عدم إضافة صورة — نفس قيمة نسخة الويب
 const String kNoImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iNDAwIiB2aWV3Qm94PSIwIDAgODAwIDQwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agc3RvcC1jb2xvcj0iI2VlZjNmYSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2RjZTdmNSIvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSI4MDAiIGhlaWdodD0iNDAwIiBmaWxsPSJ1cmwoI2cpIi8+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNzE4NWEzIiBzdHJva2Utd2lkdGg9IjE4IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjI1MiIgeT0iOTIiIHdpZHRoPSIyOTYiIGhlaWdodD0iMjE2IiByeD0iMjQiLz48Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNjUiIHI9IjMwIi8+PHBhdGggZD0iTTI4NSAyNzBsODgtODAgNjggNTkgMzgtMzQgMzYgNTUiLz48L2c+PC9zdmc+';
+
+/// صورة القسم الافتراضية — نفس قيمة نسخة الويب
+const String kCatNoImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iNDAwIiB2aWV3Qm94PSIwIDAgODAwIDQwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agc3RvcC1jb2xvcj0iI2VlZjNmYSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2RjZTdmNSIvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSI4MDAiIGhlaWdodD0iNDAwIiBmaWxsPSJ1cmwoI2cpIi8+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNzE4NWEzIiBzdHJva2Utd2lkdGg9IjE4IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjI1MiIgeT0iOTIiIHdpZHRoPSIyOTYiIGhlaWdodD0iMjE2IiByeD0iMjQiLz48Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNjUiIHI9IjMwIi8+PHBhdGggZD0iTTI4NSAyNzBsODgtODAgNjggNTkgMzgtMzQgMzYgNTUiLz48L2c+PC9zdmc+';
 
 const List<String> kRequestStatuses = ['قيد المراجعة', 'تم التواصل', 'مقبول', 'مرفوض'];
 
@@ -67,6 +78,24 @@ class AdminStore extends ChangeNotifier {
   Map<String, Json> activity = {};
   final Map<String, Map<String, Json>> pubCards = {};
   final Map<String, bool> pubReady = {};
+  Map<String, Json> categories = {};
+  Map<String, Json> geo = {};
+  Map<String, Json> ads = {};
+  Json stats = {};
+  Json metrics = {'visits': 0, 'newUsers': 0, 'searches': 0};
+  Json emptyFlags = {};
+  Json rawVersion = {};
+  int lastRev = 0;
+
+  /// أقسام/محافظات/مستخدمون افتراضيون غير محفوظين بعد في فايربيس — تُكتب كاملة عند أول تعديل (مثل الويب)
+  bool catsSeeded = false;
+  bool geoSeeded = false;
+  bool usersSeeded = false;
+
+  /// فهرس الصور في Supabase (يُحمّل عند الحاجة)
+  Map<String, Json>? mediaIndex;
+
+  void changed() => notifyListeners();
 
   String? get currentUser => AdminSession.user;
 
@@ -86,6 +115,7 @@ class AdminStore extends ChangeNotifier {
       legacyFormat = m.isNotEmpty && str(m['_fmt']) != 'map2';
       settings = m['settings'] is Map ? Map<String, dynamic>.from(m['settings'] as Map) : <String, dynamic>{};
       users = _asMap(m['users']);
+      usersSeeded = users.isEmpty;
       if (users.isEmpty) {
         // نفس الحساب الافتراضي في نسخة الويب عند عدم وجود مستخدمين
         users = {
@@ -102,6 +132,44 @@ class AdminStore extends ChangeNotifier {
       requests = _asMap(m['requests']);
       notifications = _asMap(m['notifications']);
       activity = _asMap(m['activity']);
+      emptyFlags = m['_empty'] is Map ? Map<String, dynamic>.from(m['_empty'] as Map) : <String, dynamic>{};
+      rawVersion = {'version': m['version']};
+      lastRev = intOf(m['_rev']);
+      stats = m['stats'] is Map ? Map<String, dynamic>.from(m['stats'] as Map) : <String, dynamic>{};
+      categories = _asMap(m['categories']);
+      catsSeeded = categories.isEmpty;
+      if (categories.isEmpty) {
+        // مثل نسخة الويب: عند غياب الأقسام تُستخدم الأقسام الافتراضية
+        for (final c in AppState.I.data.categories) {
+          categories[safeKey(c.id).isEmpty ? 'c${categories.length + 1}' : safeKey(c.id)] = c.toJson();
+        }
+      }
+      geo = _asMap(m['geo']);
+      geoSeeded = geo.isEmpty;
+      if (geo.isEmpty) {
+        // دليل ميسان: نفس البنية الافتراضية في نسخة الويب
+        geo = {
+          'g_maysan': {
+            'id': 'g_maysan',
+            'name': Cfg.maysanGov,
+            'districts': [
+              for (var i = 0; i < Cfg.maysanAreas.length; i++)
+                {'id': 'd_maysan_${i + 1}', 'name': Cfg.maysanAreas[i]},
+            ],
+          },
+        };
+      }
+      ads = _asMap(m['ads']);
+      try {
+        final mt = await Api.fbGet(Cfg.fbMetrics);
+        if (mt is Map) {
+          metrics = {
+            'visits': intOf(mt['visits']),
+            'newUsers': intOf(mt['newUsers']),
+            'searches': intOf(mt['searches']),
+          };
+        }
+      } catch (_) {}
       for (final code in Cfg.publicSections.values) {
         final meta = await Api.fbGet('${Cfg.fbPublicVersion}/$code');
         final ver = meta is Map ? intOf(meta['version'] ?? meta['lastUpdated']) : intOf(meta);
@@ -510,41 +578,105 @@ class AdminStore extends ChangeNotifier {
     return 'jpeg';
   }
 
-  /// يرفع الصورة ويعيد رابطها العام (نفس مسارات نسخة الويب: img/<السنة>/<الاسم>-<عشوائي>.<الامتداد>)
-  Future<String> uploadImage(Uint8List bytes, String fileName) async {
-    final s = AppState.I.settings;
-    final base = s.supaUrl;
-    final bucket = s.supaBucket;
-    final type = _imgType(bytes);
-    final ext = type == 'jpeg' ? 'jpg' : type;
-    final id = 'm${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}${randomHex(2)}';
-    final path = 'img/${DateTime.now().year}/$id-${randomHex(4)}.$ext';
+  /// رابط مشروع Supabase واسم الحاوية: من إعدادات اللوحة إن كانت صالحة، وإلا القيم الافتراضية
+  String get supaBase {
+    final v = str(settings['supaUrl']).trim().replaceFirst(RegExp(r'/+$'), '');
+    if (RegExp(r'^https://[A-Za-z0-9.-]+\.supabase\.(co|in)$', caseSensitive: false).hasMatch(v)) return v;
+    return AppState.I.settings.supaUrl;
+  }
+
+  String get supaBucket {
+    final v = str(settings['supaBucket']).trim();
+    if (RegExp(r'^[A-Za-z0-9_-]{1,60}$').hasMatch(v)) return v;
+    return AppState.I.settings.supaBucket;
+  }
+
+  Map<String, String> _supaHeaders([Map<String, String>? extra]) => {
+        'apikey': Cfg.supaKey,
+        'Authorization': 'Bearer ${Cfg.supaKey}',
+        ...?extra,
+      };
+
+  /// رفع ملف إلى Supabase — نفس supaUploadBlob في نسخة الويب: <folder>/<السنة>/<الاسم>-<لاحقة>.<الامتداد>
+  Future<(String, String)> supaUpload(Uint8List bytes, String name,
+      {String folder = 'img', String suffix = '', String? contentType}) async {
+    final type = contentType ?? 'image/${_imgType(bytes)}';
+    var ext = type.split('/').last.replaceAll(RegExp(r'[^a-z0-9]', caseSensitive: false), '');
+    if (ext == 'jpeg') ext = 'jpg';
+    if (ext.length > 5) ext = ext.substring(0, 5);
+    if (ext.isEmpty) ext = 'jpg';
+    var clean = name.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+    if (clean.length > 70) clean = clean.substring(0, 70);
+    if (clean.isEmpty) clean = 'm${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    final sfx = suffix.isNotEmpty ? suffix : randomHex(4);
+    final path = '$folder/${DateTime.now().year}/$clean-$sfx.$ext';
     final r = await http
         .post(
-          Uri.parse('$base/storage/v1/object/$bucket/$path'),
-          headers: {
-            'apikey': Cfg.supaKey,
-            'Authorization': 'Bearer ${Cfg.supaKey}',
-            'Content-Type': 'image/$type',
+          Uri.parse('$supaBase/storage/v1/object/$supaBucket/$path'),
+          headers: _supaHeaders({
+            'Content-Type': type,
             'x-upsert': 'false',
             'cache-control': '31536000',
-          },
+          }),
           body: bytes,
         )
         .timeout(const Duration(seconds: 90));
     if (r.statusCode < 200 || r.statusCode >= 300) {
       throw Exception('supabase ${r.statusCode}');
     }
-    final url = '$base/storage/v1/object/public/$bucket/$path';
-    final kb = (bytes.length / 1024).round();
+    return ('$supaBase/storage/v1/object/public/$supaBucket/$path', path);
+  }
+
+  /// هل الصورة مقروءة للعامة؟ (نفس supaPublicImageReady)
+  Future<bool> supaPublicReady(String url) async {
     try {
-      await Api.fbPut('${Cfg.fbRoot}/mediaIndex/$id', {
-        'u': url,
-        'p': path,
-        'kb': kb,
-        'at': nowIso(),
-        'n': clip(fileName, 80),
-      });
+      final r = await http
+          .get(Uri.parse(url), headers: {'Range': 'bytes=0-0'})
+          .timeout(const Duration(seconds: 25));
+      final type = r.headers['content-type'] ?? '';
+      return r.statusCode >= 200 &&
+          r.statusCode < 300 &&
+          (type.isEmpty || type.startsWith('image/') || type.startsWith('application/octet-stream'));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> supaDeletePath(String path) async {
+    if (path.isEmpty) return false;
+    try {
+      final r = await http
+          .delete(Uri.parse('$supaBase/storage/v1/object/$supaBucket/$path'), headers: _supaHeaders())
+          .timeout(const Duration(seconds: 30));
+      return r.statusCode >= 200 && r.statusCode < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String supaPathFromUrl(String u) {
+    final pre = '$supaBase/storage/v1/object/public/$supaBucket/';
+    return u.startsWith(pre) ? u.substring(pre.length) : '';
+  }
+
+  /// يرفع صورة عامة (عناصر، أقسام، خلفيات) ويعيد رابطها — نفس pickImage في نسخة الويب
+  Future<String> uploadImage(Uint8List bytes, String fileName) async {
+    final id = 'm${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}${randomHex(2)}';
+    final (url, path) = await supaUpload(bytes, id);
+    if (!await supaPublicReady(url)) {
+      await supaDeletePath(path);
+      throw Exception('supabase-public-read');
+    }
+    final rec = <String, dynamic>{
+      'u': url,
+      'p': path,
+      'kb': (bytes.length / 1024).round(),
+      'at': nowIso(),
+      'n': clip(fileName, 80),
+    };
+    try {
+      await Api.fbPut('${Cfg.fbRoot}/mediaIndex/$id', rec);
+      mediaIndex?[id] = rec;
     } catch (_) {}
     return url;
   }

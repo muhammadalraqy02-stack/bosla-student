@@ -622,6 +622,37 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// الاشتراك في النشرة البريدية — نفس subscribe في نسخة الويب (طلب من نوع «اشتراك» يظهر في لوحة المدير)
+  Future<String?> subscribeNewsletter(String email) async {
+    if (!await allowPublicRequest()) return 'يرجى الانتظار قليلاً قبل المحاولة مجدداً';
+    final mail = clip(email, 180).toLowerCase();
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$').hasMatch(mail)) return 'أدخل بريداً إلكترونياً صحيحاً';
+    final done = Store.getJson('kp_public_request_subs', const []);
+    final list = done is List ? done.map((e) => e.toString()).toList() : <String>[];
+    if (list.contains(mail)) return 'هذا البريد مشترك مسبقاً';
+    final id = uid();
+    try {
+      await Api.fbPatch(Cfg.fbCore, {
+        'requests/${safeKey(id)}': {
+          'id': id,
+          'type': 'اشتراك',
+          'about': 'النشرة البريدية',
+          'from': mail,
+          'msg': 'طلب اشتراك في النشرة',
+          'at': nowIso(),
+          'read': false,
+        },
+        '_empty/requests': false,
+        '_by': _clientId,
+        '_rev': DateTime.now().millisecondsSinceEpoch,
+      });
+      await Store.setJson('kp_public_request_subs', [...list, mail]);
+      return null;
+    } catch (_) {
+      return 'تعذّر الإرسال — تحقق من الاتصال';
+    }
+  }
+
   /// يكتب الطلب داخل core/requests بتحديث جزئي (نفس صيغة نسخة الويب) ليظهر في لوحة المدير
   Future<void> _pushRequest(RequestItem r) async {
     await Api.fbPatch(Cfg.fbCore, {

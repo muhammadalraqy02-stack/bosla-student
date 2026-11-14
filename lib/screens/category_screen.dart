@@ -25,10 +25,17 @@ class _CategoryScreenState extends State<CategoryScreen> {
   String _query = '';
   String _area = '';
   String _specialty = '';
+  // التصفح الهرمي: محافظة ← مركز ← العناصر (مثل renderHier في نسخة الويب)
+  String _gov = '';
+  String _dist = '';
   bool _loading = false;
 
   bool get _isTeachers => widget.catKey == 'مدرسين';
   bool get _isInstitutes => widget.catKey == 'معاهد';
+  bool get _isHier {
+    final c = AppState.I.catByKey(widget.catKey);
+    return c != null && c.hier && !_isTeachers && !_isInstitutes;
+  }
 
   @override
   void initState() {
@@ -53,6 +60,14 @@ class _CategoryScreenState extends State<CategoryScreen> {
   }
 
   bool _handleBack() {
+    if (_dist.isNotEmpty) {
+      setState(() => _dist = '');
+      return false;
+    }
+    if (_gov.isNotEmpty) {
+      setState(() => _gov = '');
+      return false;
+    }
     if (_specialty.isNotEmpty || _area.isNotEmpty) {
       setState(() {
         _specialty = '';
@@ -77,6 +92,9 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
         final chooseSpecialty = _isTeachers && _specialty.isEmpty;
         final chooseArea = _isInstitutes && _area.isEmpty;
+        final hier = _isHier && _query.isEmpty;
+        final chooseGov = hier && _gov.isEmpty;
+        final chooseDist = hier && _gov.isNotEmpty && _dist.isEmpty;
         final showTiles = chooseSpecialty || chooseArea;
 
         var base = all;
@@ -89,6 +107,12 @@ class _CategoryScreenState extends State<CategoryScreen> {
             return (sp.isEmpty ? Cfg.noArea : sp) == _specialty;
           }).toList();
         }
+        if (hier && _gov.isNotEmpty) {
+          base = base.where((c) => (c.gov.isEmpty ? Cfg.noArea : c.gov) == _gov).toList();
+        }
+        if (hier && _dist.isNotEmpty) {
+          base = base.where((c) => (c.dist.isEmpty ? Cfg.noArea : c.dist) == _dist).toList();
+        }
         final q = _query.toLowerCase();
         final list = q.isEmpty
             ? base
@@ -99,7 +123,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
               }).toList();
 
         return PopScope(
-          canPop: _specialty.isEmpty && _area.isEmpty,
+          canPop: _specialty.isEmpty && _area.isEmpty && _gov.isEmpty && _dist.isEmpty,
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) _handleBack();
           },
@@ -136,6 +160,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                     ),
                   if (_isTeachers || _isInstitutes)
                     SliverToBoxAdapter(child: _crumb(p)),
+                  if (hier) SliverToBoxAdapter(child: _hierCrumb(p, cat)),
                   if (!showTiles)
                     SliverToBoxAdapter(
                       child: Padding(
@@ -159,6 +184,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
                     _specialtyTiles(s, all)
                   else if (chooseArea)
                     _areaTiles(all, cat)
+                  else if (chooseGov)
+                    _govTiles(all, cat)
+                  else if (chooseDist)
+                    _distTiles(all, cat)
                   else
                     CardsSliver(list),
                   const SliverToBoxAdapter(child: SizedBox(height: 70)),
@@ -233,6 +262,143 @@ class _CategoryScreenState extends State<CategoryScreen> {
               child: Text(hint, style: TextStyle(color: p.muted, fontSize: 13)),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _hierCrumb(Pal p, AppCategory? cat) {
+    final name = cat?.name ?? widget.catKey;
+    final hint = _gov.isEmpty
+        ? 'اختر المحافظة ثم المركز لعرض $name التابعة له.'
+        : (_dist.isEmpty ? 'مراكز محافظة $_gov — اختر المركز لعرض $name التابعة له.' : '');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ActionChip(
+                avatar: const Icon(Icons.map_outlined, size: 16),
+                label: const Text('كل المحافظات'),
+                onPressed: _gov.isEmpty
+                    ? null
+                    : () => setState(() {
+                          _gov = '';
+                          _dist = '';
+                        }),
+              ),
+              if (_gov.isNotEmpty) ...[
+                Icon(Icons.chevron_left, size: 18, color: p.muted),
+                ActionChip(
+                  label: Text('محافظة $_gov',
+                      style: TextStyle(fontWeight: _dist.isEmpty ? FontWeight.w800 : FontWeight.w500)),
+                  onPressed: _dist.isEmpty ? null : () => setState(() => _dist = ''),
+                ),
+              ],
+              if (_dist.isNotEmpty) ...[
+                Icon(Icons.chevron_left, size: 18, color: p.muted),
+                Chip(label: Text('مركز $_dist', style: const TextStyle(fontWeight: FontWeight.w800))),
+              ],
+            ],
+          ),
+          if (hint.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(hint, style: TextStyle(color: p.muted, fontSize: 13)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _hierEmpty(String text) {
+    final p = Pal.of(context);
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.all(30),
+        child: Text(text, textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
+      ),
+    );
+  }
+
+  /// المستوى الأول: المحافظات المسجّلة التي فيها عناصر + «غير محدد»
+  Widget _govTiles(List<CardItem> all, AppCategory? cat) {
+    final counts = <String, int>{};
+    for (final c in all) {
+      final g = c.gov.isEmpty ? Cfg.noArea : c.gov;
+      counts[g] = (counts[g] ?? 0) + 1;
+    }
+    final govs = <String>[
+      if ((counts[Cfg.maysanGov] ?? 0) > 0) Cfg.maysanGov,
+      if ((counts[Cfg.noArea] ?? 0) > 0) Cfg.noArea,
+    ];
+    if (govs.isEmpty) return _hierEmpty('لا توجد عناصر منشورة بعد في هذا القسم.');
+    final p = Pal.of(context);
+    final one = cat?.one ?? '';
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      sliver: SliverGrid(
+        gridDelegate: _tileDelegate(context),
+        delegate: SliverChildBuilderDelegate(
+          (ctx, i) {
+            final g = govs[i];
+            return _Tile(
+              icon: g == Cfg.noArea ? Icons.help_outline : Icons.location_on,
+              soft: p.soft,
+              accent: p.brandOn,
+              title: g,
+              sub: '${counts[g] ?? 0} $one',
+              onTap: () => setState(() {
+                _gov = g;
+                _dist = '';
+              }),
+            );
+          },
+          childCount: govs.length,
+        ),
+      ),
+    );
+  }
+
+  /// المستوى الثاني: مراكز المحافظة المختارة
+  Widget _distTiles(List<CardItem> all, AppCategory? cat) {
+    final counts = <String, int>{};
+    for (final c in all) {
+      if ((c.gov.isEmpty ? Cfg.noArea : c.gov) != _gov) continue;
+      final d = c.dist.isEmpty ? Cfg.noArea : c.dist;
+      counts[d] = (counts[d] ?? 0) + 1;
+    }
+    final known = _gov == Cfg.maysanGov ? Cfg.maysanAreas : const <String>[];
+    final order = <String>[
+      ...known.where((n) => (counts[n] ?? 0) > 0),
+      ...counts.keys.where((n) => !known.contains(n) && n != Cfg.noArea),
+      if ((counts[Cfg.noArea] ?? 0) > 0) Cfg.noArea,
+    ];
+    if (order.isEmpty) return _hierEmpty('لا توجد عناصر منشورة في هذه المحافظة.');
+    final p = Pal.of(context);
+    final one = cat?.one ?? '';
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      sliver: SliverGrid(
+        gridDelegate: _tileDelegate(context),
+        delegate: SliverChildBuilderDelegate(
+          (ctx, i) {
+            final d = order[i];
+            return _Tile(
+              icon: d == Cfg.noArea ? Icons.help_outline : Icons.place,
+              soft: p.soft,
+              accent: p.brandOn,
+              title: d == Cfg.noArea ? d : 'مركز $d',
+              sub: '${counts[d] ?? 0} $one',
+              onTap: () => setState(() => _dist = d),
+            );
+          },
+          childCount: order.length,
+        ),
       ),
     );
   }

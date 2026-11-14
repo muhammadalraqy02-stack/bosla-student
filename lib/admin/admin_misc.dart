@@ -7,7 +7,10 @@ import 'package:flutter/material.dart';
 import '../ui.dart';
 import '../utils.dart';
 import '../widgets/common.dart';
+import '../widgets/app_image.dart';
+import 'admin_sections_b.dart';
 import 'admin_store.dart';
+import 'admin_ui.dart';
 
 // ======================= الطلبات =======================
 class AdminRequestsScreen extends StatelessWidget {
@@ -117,6 +120,17 @@ class AdminRequestsScreen extends StatelessWidget {
                     : () async {
                         final r = await s.markAllRead();
                         toast(r ?? 'تم التعليم', r == null ? ToastType.ok : ToastType.err);
+                      },
+              ),
+              IconButton(
+                tooltip: 'مسح جميع الطلبات',
+                icon: const Icon(Icons.delete_sweep_outlined),
+                onPressed: list.isEmpty
+                    ? null
+                    : () async {
+                        final ok = await confirmDialog(context, 'مسح جميع الطلبات؟', ok: 'مسح', danger: true);
+                        if (!ok) return;
+                        showResult(await s.clearRequests(), 'تم المسح');
                       },
               ),
             ],
@@ -372,7 +386,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     ['catsSub', 'وصف قسم الأقسام'],
     ['listTitle', 'عنوان قسم النتائج'],
     ['listSub', 'وصف قسم النتائج'],
-    ['welcomeTitle', 'عنوان لوحة الترحيب'],
+    ['heroImg', 'صورة الواجهة (Hero)'],
   ];
 
   final Map<String, TextEditingController> _c = {};
@@ -404,7 +418,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   Future<void> _saveIdentity() async {
     final changes = <String, dynamic>{};
     for (final f in _identity) {
-      final v = clip(_c[f[0]]!.text, f[0] == 'heroText' ? 1000 : 180);
+      final v = clip(_c[f[0]]!.text, f[0] == 'heroText' ? 1000 : (f[0] == 'heroImg' ? 600 : 180));
       if (v != AdminStore.I.setting(f[0])) changes[f[0]] = v;
     }
     if (changes.isEmpty) {
@@ -473,8 +487,159 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           ),
           const SizedBox(height: 12),
           PrimaryButton('حفظ بيانات القائمة', icon: Icons.save_outlined, busy: _busy, onPressed: _saveDrawer),
+          const SizedBox(height: 22),
+          const _AppearancePanel(),
+          const AdminBackupPanel(),
         ],
       ),
+    );
+  }
+}
+
+/// الخلفيات والمظهر — نفس قسم «الخلفيات والمظهر» في إعدادات الويب
+class _AppearancePanel extends StatefulWidget {
+  const _AppearancePanel();
+
+  @override
+  State<_AppearancePanel> createState() => _AppearancePanelState();
+}
+
+class _AppearancePanelState extends State<_AppearancePanel> {
+  final Map<String, double> _dims = {};
+  bool _busy = false;
+
+  double _dim(String k, double def) {
+    final v = AdminStore.I.settings[k];
+    return _dims[k] ?? (v is num ? v.toDouble().clamp(0.0, 1.0).toDouble() : def);
+  }
+
+  Future<void> _upload(String key) async {
+    final x = await pickImageFile(context);
+    if (x == null) return;
+    setState(() => _busy = true);
+    try {
+      toast('جاري ضغط ورفع الصورة...');
+      final url = await AdminStore.I.uploadImage(await x.readAsBytes(), x.name);
+      showResult(await AdminStore.I.setSettingImage(key, url), 'تم تحديث الخلفية وحفظها سحابياً');
+    } catch (_) {
+      toast('تعذّر رفع الصورة — تحقق من الاتصال وإعدادات Supabase', ToastType.err);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Widget _slider(String key, String label, double def) {
+    final v = _dim(key, def);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label: ${(v * 100).round()}%', style: const TextStyle(fontSize: 12.5)),
+        Slider(
+          value: v,
+          divisions: 100,
+          onChanged: (x) => setState(() => _dims[key] = x),
+          onChangeEnd: (x) async {
+            final r = await AdminStore.I.saveSettings({key: double.parse(x.toStringAsFixed(2))}, log: '');
+            if (r != null) toast(r, ToastType.err);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _color(String key, String label, String def) {
+    final cur = AdminStore.I.setting(key).isEmpty ? def : AdminStore.I.setting(key);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: hexColor(cur),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0x33000000)),
+        ),
+      ),
+      onTap: () async {
+        final v = await pickColor(context, cur, title: label);
+        if (v == null) return;
+        showResult(await AdminStore.I.saveSettings({key: v.toLowerCase()}, log: ''), 'تم حفظ اللون');
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: AdminStore.I, builder: (context, _) => _build(context));
+  }
+
+  Widget _build(BuildContext context) {
+    final p = Pal.of(context);
+    final s = AdminStore.I;
+    return AdminPanel(
+      title: 'الخلفيات والمظهر',
+      note: 'الصور تُرفع إلى Supabase ويُحفظ رابطها فقط في فايربيس',
+      children: [
+        for (final b in kBgKeys)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: p.soft,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: AppImage(s.setting(b[0]), width: 64, height: 64),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(b[1], style: TextStyle(fontWeight: FontWeight.w800, color: p.text)),
+                      Text(b[2], style: TextStyle(fontSize: 11, color: p.muted)),
+                      Wrap(
+                        spacing: 4,
+                        children: [
+                          TextButton.icon(
+                            onPressed: _busy ? null : () => _upload(b[0]),
+                            icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                            label: const Text('رفع صورة'),
+                          ),
+                          TextButton.icon(
+                            onPressed: () async {
+                              final v = await promptText(context, b[1],
+                                  initial: s.setting(b[0]), hint: 'https://... رابط الصورة', ltr: true);
+                              if (v == null) return;
+                              showResult(await s.setSettingImage(b[0], v.trim()), 'تم الحفظ');
+                            },
+                            icon: const Icon(Icons.link, size: 18),
+                            label: const Text('رابط'),
+                          ),
+                          if (s.setting(b[0]).isNotEmpty)
+                            TextButton.icon(
+                              onPressed: () async => showResult(await s.setSettingImage(b[0], ''), 'تمت الإزالة'),
+                              icon: const Icon(Icons.close, size: 18),
+                              label: const Text('إزالة'),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        _slider('pageDim', 'شفافية الطبقة فوق خلفية الموقع', 0.9),
+        _slider('adminDim', 'شفافية طبقة لوحة التحكم', 0.9),
+        _slider('loginDim', 'شفافية طبقة نافذة الدخول', 0.82),
+        _color('brandColor', 'اللون الرئيسي', '#10275e'),
+        _color('accentColor', 'اللون الثانوي', '#7C3AED'),
+      ],
     );
   }
 }

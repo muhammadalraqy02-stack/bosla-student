@@ -10,6 +10,7 @@ import '../utils.dart';
 import '../widgets/app_image.dart';
 import '../widgets/common.dart';
 import 'admin_store.dart';
+import 'admin_ui.dart';
 
 const String _published = 'منشور';
 const String _draft = 'مسودة';
@@ -324,10 +325,39 @@ class _AdminCardEditorState extends State<AdminCardEditor> {
                 _addImage(ImageSource.camera);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('إضافة برابط'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _addImageUrl();
+              },
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// إضافة صورة برابط — نفس editorAddImageUrl
+  Future<void> _addImageUrl() async {
+    if (_images.length >= 20) {
+      toast('الحد الأعلى 20 صورة', ToastType.warn);
+      return;
+    }
+    final v = await promptText(context, 'الصق رابط الصورة', hint: 'https://...', ltr: true);
+    if (v == null) return;
+    final ref = v.trim();
+    if (!RegExp(r'^https://', caseSensitive: false).hasMatch(ref) &&
+        !RegExp(r'^data:image/(png|jpe?g|webp|gif);base64,', caseSensitive: false).hasMatch(ref)) {
+      toast('رابط الصورة غير صالح', ToastType.warn);
+      return;
+    }
+    if (_images.contains(ref)) {
+      toast('هذه الصورة مضافة مسبقاً', ToastType.warn);
+      return;
+    }
+    setState(() => _images.add(ref));
   }
 
   Future<void> _save() async {
@@ -482,8 +512,25 @@ class _AdminCardEditorState extends State<AdminCardEditor> {
               ),
             )
           else ...[
-            _field(_gov, 'المحافظة', icon: Icons.map_outlined),
-            _field(_distText, 'المركز / المنطقة', icon: Icons.place_outlined),
+            _geoSelect(
+              label: 'المحافظة',
+              icon: Icons.map_outlined,
+              value: _gov.text.trim(),
+              options: const [Cfg.maysanGov],
+              empty: '— اختر المحافظة —',
+              onChanged: (v) => setState(() {
+                _gov.text = v;
+                _distText.text = '';
+              }),
+            ),
+            _geoSelect(
+              label: 'المركز',
+              icon: Icons.place_outlined,
+              value: _distText.text.trim(),
+              options: _gov.text.trim() == Cfg.maysanGov ? Cfg.maysanAreas : const <String>[],
+              empty: '— اختر المركز —',
+              onChanged: (v) => setState(() => _distText.text = v),
+            ),
           ],
           _field(_city, 'العنوان / المدينة', icon: Icons.location_city_outlined),
           _field(_phone, 'الهاتف', icon: Icons.phone_outlined, type: TextInputType.phone),
@@ -571,14 +618,24 @@ class _AdminCardEditorState extends State<AdminCardEditor> {
           Text('معلومات إضافية', style: TextStyle(fontWeight: FontWeight.w800, color: p.text)),
           const SizedBox(height: 8),
           for (final f in formFields(_key))
-            _field(
-              _ctrl(f.id),
-              f.label,
-              icon: f.icon,
-              hint: f.link == 'map'
-                  ? 'رابط خرائط Google أو إحداثيات مثل 31.83,47.14'
-                  : (f.link.isNotEmpty ? 'رابط أو معرّف أو رقم' : null),
-            ),
+            if (kSelectOpts[_key]?[f.id] != null)
+              _geoSelect(
+                label: f.label,
+                icon: f.icon,
+                value: _ctrl(f.id).text.trim(),
+                options: kSelectOpts[_key]![f.id]!,
+                empty: '— اختر —',
+                onChanged: (v) => setState(() => _ctrl(f.id).text = v),
+              )
+            else
+              _field(
+                _ctrl(f.id),
+                f.label,
+                icon: f.icon,
+                hint: f.link == 'map'
+                    ? 'رابط خرائط Google أو إحداثيات مثل 31.83,47.14'
+                    : (f.link.isNotEmpty ? 'رابط أو معرّف أو رقم' : null),
+              ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('منشور (يظهر للزوار)'),
@@ -599,6 +656,35 @@ class _AdminCardEditorState extends State<AdminCardEditor> {
             onPressed: _save,
           ),
         ],
+      ),
+    );
+  }
+
+  /// قائمة اختيار مع الإبقاء على القيمة الحالية حتى لو لم تكن ضمن الخيارات (مثل نسخة الويب)
+  Widget _geoSelect({
+    required String label,
+    required IconData icon,
+    required String value,
+    required List<String> options,
+    required String empty,
+    required ValueChanged<String> onChanged,
+  }) {
+    final items = <String>['', ...options];
+    if (value.isNotEmpty && !items.contains(value)) items.add(value);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String>(
+        value: value,
+        isExpanded: true,
+        decoration: fieldDeco(context, label, icon: icon),
+        items: [
+          for (final o in items)
+            DropdownMenuItem(
+              value: o,
+              child: Text(o.isEmpty ? empty : (options.contains(o) ? o : '$o (غير مسجّلة)')),
+            ),
+        ],
+        onChanged: (v) => onChanged(v ?? ''),
       ),
     );
   }

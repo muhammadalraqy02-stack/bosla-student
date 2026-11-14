@@ -13,6 +13,42 @@ import 'notifications_screen.dart';
 import 'search_screen.dart';
 import 'suggest_screen.dart';
 
+/// نافذة الاشتراك في النشرة البريدية
+Future<void> _subscribe(BuildContext context) async {
+  final c = TextEditingController();
+  final mail = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('النشرة البريدية', style: TextStyle(fontSize: 17)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('اشترك ليصلك جديد المنصة على بريدك الإلكتروني.', style: TextStyle(height: 1.6)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: c,
+            keyboardType: TextInputType.emailAddress,
+            textDirection: TextDirection.ltr,
+            autofocus: true,
+            decoration: fieldDeco(ctx, 'بريدك الإلكتروني', icon: Icons.alternate_email),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('إلغاء')),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(c.text),
+          child: const Text('اشتراك', style: TextStyle(fontWeight: FontWeight.w800)),
+        ),
+      ],
+    ),
+  );
+  c.dispose();
+  if (mail == null) return;
+  final r = await AppState.I.subscribeNewsletter(mail);
+  toast(r ?? 'تم تسجيل بريدك بنجاح', r == null ? ToastType.ok : ToastType.warn);
+}
+
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
 
@@ -179,6 +215,7 @@ class MoreScreen extends StatelessWidget {
                   openAdminWhatsApp,
                   color: const Color(0xFF25D366),
                 ),
+                tile(Icons.mark_email_read_outlined, 'اشترك في النشرة البريدية', () => _subscribe(context)),
                 tile(Icons.info_outline, 'عن التطبيق', () => showInfoPage(context, app: true)),
                 tile(Icons.business, 'عن الشركة المطوّرة', () => showInfoPage(context, app: false)),
                 tile(Icons.headset_mic_outlined, 'الدعم والمساعدة', () => openLegal(context, 'support')),
