@@ -500,7 +500,7 @@ class AdminStore extends ChangeNotifier {
     final x = clip(text, 1500);
     if (t.isEmpty || x.isEmpty) return 'العنوان والنص مطلوبان';
     final isNew = id == null;
-    final String key = isNew ? 'n${randomHex(8)}' : id!;
+    final String key = isNew ? 'n${randomHex(8)}' : id;
     final n = isNew
         ? <String, dynamic>{'id': key, 'title': t, 'text': x, 'at': nowIso(), 'active': true}
         : (Map<String, dynamic>.from(notifications[key] ?? {'id': key, 'at': nowIso(), 'active': true})

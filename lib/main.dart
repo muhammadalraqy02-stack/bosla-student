@@ -1,12 +1,15 @@
 // بوصلة الطالب — تطبيق Flutter أصلي
 // نقطة البداية: التهيئة، السمة (كحلي/ذهبي، خط Cairo، RTL)، والهيكل الرئيسي بشريط التنقل السفلي
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app_state.dart';
 import 'notifs.dart';
+import 'push.dart';
 import 'screens/compare_screen.dart';
 import 'screens/favorites_screen.dart';
 import 'screens/home_screen.dart';
@@ -23,6 +26,8 @@ Future<void> main() async {
   await Notifs.init();
   await AppState.I.init();
   runApp(const BoslaApp());
+  // الإشعارات الفورية (تعمل فقط بعد إضافة google-services.json)
+  unawaited(Push.init());
 }
 
 final Map<String, ThemeData> _themeCache = {};

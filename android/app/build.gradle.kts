@@ -59,3 +59,9 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
+// الإشعارات الفورية (FCM): تُفعَّل تلقائياً عند إضافة android/app/google-services.json من Firebase Console.
+// بدون الملف يُبنى التطبيق طبيعياً وتُتجاوز الإشعارات الفورية.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
