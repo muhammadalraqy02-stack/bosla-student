@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "924434898060",
+    "firebase_url": "https://bosla-e2164-default-rtdb.firebaseio.com",
+    "project_id": "bosla-e2164",
+    "storage_bucket": "bosla-e2164.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:924434898060:android:f4a0b84ce0386b15a4afa9",
+        "android_client_info": {
+          "package_name": "com.bosla2026"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBzpMcmLbFLlmtVGGGrXQsy-rW1S4-q9MY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:924434898060:android:f538695699aaa5d0a4afa9",
+        "android_client_info": {
+          "package_name": "com.bosla2026.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBzpMcmLbFLlmtVGGGrXQsy-rW1S4-q9MY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
