@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../admin/admin_entry.dart';
 import '../app_state.dart';
 import '../ui.dart';
 import '../widgets/common.dart';
@@ -230,6 +231,10 @@ class MoreScreen extends StatelessWidget {
                   () => openLegal(context, 'delete'),
                   color: const Color(0xFFB42318),
                 ),
+              ]),
+              // دخول المدير ظاهر وواضح (وليس ميزة مخفية) — متطلبات أبل 2.3.1
+              group('الإدارة', [
+                tile(Icons.admin_panel_settings_outlined, 'دخول المدير', () => openAdmin(context)),
               ]),
               Padding(
                 padding: const EdgeInsets.all(20),

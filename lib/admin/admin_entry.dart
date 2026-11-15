@@ -1,9 +1,8 @@
-// مدخل لوحة الإدارة: 5 ضغطات متتالية على الشعار (مثل نسخة الويب)، شاشة الدخول، والصفحة الرئيسية للوحة
+// مدخل لوحة الإدارة: زر «دخول المدير» الظاهر في تبويب المزيد، شاشة الدخول، والصفحة الرئيسية للوحة
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../config.dart';
 import '../ui.dart';
@@ -17,22 +16,7 @@ import 'admin_sections_b.dart';
 import 'admin_store.dart';
 import 'admin_ui.dart';
 
-int _taps = 0;
-Timer? _tapTimer;
-
-/// تُستدعى عند الضغط على الشعار — 5 ضغطات خلال ثانية ونصف بين كل ضغطة وأخرى تفتح الإدارة
-void adminSecretTap(BuildContext context) {
-  _taps++;
-  _tapTimer?.cancel();
-  _tapTimer = Timer(const Duration(milliseconds: 1500), () => _taps = 0);
-  if (_taps >= 5) {
-    _taps = 0;
-    _tapTimer?.cancel();
-    HapticFeedback.mediumImpact();
-    openAdmin(context);
-  }
-}
-
+/// فتح دخول المدير من زر «دخول المدير» في تبويب المزيد
 void openAdmin(BuildContext context) {
   final Widget page =
       AdminSession.user != null ? const AdminHomeScreen() : const AdminLoginScreen();
