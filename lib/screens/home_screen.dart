@@ -136,6 +136,31 @@ class _HomeScreenState extends State<HomeScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverToBoxAdapter(child: _DateBar()),
+                // رسالة الترحيب واللوحة الإعلانية في الأعلى مباشرة تحت شريط التاريخ — نفس مكانها في نسخة الويب
+                if (showWelcome || ads.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                      child: Column(
+                        children: [
+                          if (showWelcome)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                st.welcomeTitle,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  color: p.brandOn,
+                                ),
+                              ),
+                            ),
+                          if (ads.isNotEmpty) AdsCarousel(ads: ads, delaySeconds: st.adsDelay),
+                        ],
+                      ),
+                    ),
+                  ),
                 SliverToBoxAdapter(child: _Hero()),
                 SliverToBoxAdapter(child: SectionTitle(st.catsTitle, sub: st.catsSub)),
                 if (s.data.categories.isEmpty)
@@ -160,30 +185,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 SliverToBoxAdapter(child: SectionTitle(st.listTitle, sub: st.listSub)),
                 SliverToBoxAdapter(child: _QuickActions()),
-                if (showWelcome || ads.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 4),
-                      child: Column(
-                        children: [
-                          if (showWelcome)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Text(
-                                st.welcomeTitle,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                  color: p.brandOn,
-                                ),
-                              ),
-                            ),
-                          if (ads.isNotEmpty) AdsCarousel(ads: ads, delaySeconds: st.adsDelay),
-                        ],
-                      ),
-                    ),
-                  ),
                 SliverToBoxAdapter(child: _Trust()),
                 SliverToBoxAdapter(
                   child: Padding(
