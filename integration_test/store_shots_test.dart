@@ -43,6 +43,9 @@ void main() {
 
   Finder inScreen(Finder screen, Finder f) => find.descendant(of: screen, matching: f);
 
+  // بطاقة عنصر: ItemCard للأقسام العادية و TeacherTile لشبكة المدرسين
+  Finder cardFinder() => find.byWidgetPredicate((w) => w is ItemCard || w is TeacherTile);
+
   // يطبع علامة الصورة ثم ينتظر حتى يلتقطها السكربت من شاشة المحاكي
   Future<void> shot(WidgetTester t, String name) async {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -117,7 +120,7 @@ void main() {
       await shot(t, '03-teachers-specialties');
       if (await pickSpecialty(t)) {
         await shot(t, '04-teachers-list');
-        final card = inScreen(find.byType(CategoryScreen), find.byType(ItemCard));
+        final card = inScreen(find.byType(CategoryScreen), cardFinder());
         if (await waitFor(t, card, seconds: 10)) {
           await tap(t, card, 2500);
           if (await waitFor(t, find.byType(DetailScreen), seconds: 8)) {
@@ -167,7 +170,7 @@ void main() {
     if (await openCat(t, 'مدرسين')) {
       await wait(t, 1500);
       if (await pickSpecialty(t)) {
-        final card = inScreen(find.byType(CategoryScreen), find.byType(ItemCard));
+        final card = inScreen(find.byType(CategoryScreen), cardFinder());
         if (await waitFor(t, card, seconds: 6)) {
           await tap(t, card, 2500);
           await smooth(t, find.byType(DetailScreen), -600, ms: 2000);

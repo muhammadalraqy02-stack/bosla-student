@@ -88,6 +88,9 @@ void main() {
 
   Finder inScreen(Finder screen, Finder f) => find.descendant(of: screen, matching: f);
 
+  // بطاقة عنصر: ItemCard للأقسام العادية و TeacherTile لشبكة المدرسين
+  Finder cardFinder() => find.byWidgetPredicate((w) => w is ItemCard || w is TeacherTile);
+
   Future<bool> scrollTo(WidgetTester t, Finder screen, Finder f) async {
     if (f.evaluate().isNotEmpty) return true;
     final sc = vScroll(screen);
@@ -126,7 +129,7 @@ void main() {
   /// ينتظر ظهور عناصر في شاشة القسم ويفتح أول عنصر
   Future<void> openFirstCard(WidgetTester t, String label) async {
     final cat = find.byType(CategoryScreen);
-    final card = inScreen(cat, find.byType(ItemCard));
+    final card = inScreen(cat, cardFinder());
     final shown = await waitFor(t, card, seconds: 15) || await scrollTo(t, cat, card);
     check(shown, 'عناصر $label ظهرت');
     if (!shown) return;
@@ -192,7 +195,10 @@ void main() {
           }
           check(tapped, 'اختيار اختصاص في قسم المدرسين');
           if (tapped) await openFirstCard(t, 'المدرسين');
-          await back(t);
+          // الرجوع من قائمة الاختصاص ثم من القسم إلى الرئيسية
+          while (navigatorKey.currentState?.canPop() ?? false) {
+            await back(t);
+          }
         }
       }
 
@@ -214,7 +220,9 @@ void main() {
           await wait(t, 2500);
           await shot(t, 'category-${plain.key}');
           await openFirstCard(t, plain.name);
-          await back(t);
+          while (navigatorKey.currentState?.canPop() ?? false) {
+            await back(t);
+          }
         }
       }
 
@@ -246,7 +254,7 @@ void main() {
         if (area) {
           await wait(t, 3000);
           await shot(t, 'cat-${c.key}-area');
-          final card = inScreen(cat, find.byType(ItemCard));
+          final card = inScreen(cat, cardFinder());
           final empty = find.textContaining('لا ').evaluate().isNotEmpty;
           check(await waitFor(t, card, seconds: 12) || empty, 'عناصر «${c.name}» في المنطقة تظهر');
         }
