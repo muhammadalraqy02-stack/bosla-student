@@ -5,6 +5,11 @@ name: Build Android APK
 on:
   push:
     branches: [main, master]
+    # تعديلات iOS وحدها لا تحتاج بناء نسخة أندرويد جديدة
+    paths-ignore:
+      - 'ios/**'
+      - '.github/workflows/ios-scaffold.yml'
+      - '.github/workflows/build-ios.yml'
   pull_request:
   workflow_dispatch:
 

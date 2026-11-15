@@ -1,0 +1,38 @@
+# إنشاء منصة iOS لمشروع Flutter (مرة واحدة) باستخدام flutter create بنفس إصدار Flutter 3.35
+# لا يفعل شيئاً إذا كان المجلد ios/ موجوداً.
+name: iOS scaffold (one-time)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ios-scaffold.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.35.x'
+          cache: true
+
+      - name: Create ios/ if missing
+        run: |
+          if [ -d ios ]; then echo "ios/ already exists — nothing to do"; exit 0; fi
+          flutter --version
+          flutter create --platforms=ios --org com.bosla2026 --project-name bosla_student .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ios
+          git commit -m "chore(ios): إنشاء منصة iOS بأداة flutter create (Flutter 3.35)"
+          git push
