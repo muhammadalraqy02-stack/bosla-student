@@ -8,7 +8,11 @@ import 'package:bosla_student/app_state.dart';
 import 'package:bosla_student/config.dart';
 import 'package:bosla_student/main.dart' as app;
 import 'package:bosla_student/models.dart';
+import 'package:bosla_student/screens/category_screen.dart';
 import 'package:bosla_student/screens/detail_screen.dart';
+import 'package:bosla_student/screens/home_screen.dart';
+import 'package:bosla_student/screens/more_screen.dart';
+import 'package:bosla_student/screens/search_screen.dart';
 import 'package:bosla_student/ui.dart';
 import 'package:bosla_student/widgets/common.dart';
 import 'package:flutter/foundation.dart';
@@ -74,18 +78,71 @@ void main() {
     return true;
   }
 
-  Future<bool> scrollTo(WidgetTester t, Finder f) async {
+  // التبويبات محفوظة في IndexedStack (المخفية منها تبقى في الشجرة)، لذلك كل بحث وتمرير محصور
+  // داخل الشاشة الظاهرة حالياً
+  Finder vScroll(Finder inside) => find.descendant(
+        of: inside,
+        matching: find.byWidgetPredicate(
+            (w) => w is Scrollable && axisDirectionToAxis(w.axisDirection) == Axis.vertical),
+      );
+
+  Finder inScreen(Finder screen, Finder f) => find.descendant(of: screen, matching: f);
+
+  Future<bool> scrollTo(WidgetTester t, Finder screen, Finder f) async {
     if (f.evaluate().isNotEmpty) return true;
-    final scrollables = find.byType(Scrollable);
-    if (scrollables.evaluate().isEmpty) return false;
+    final sc = vScroll(screen);
+    if (sc.evaluate().isEmpty) return false;
     try {
-      await t.scrollUntilVisible(f, 250, scrollable: scrollables.first, maxScrolls: 40);
+      await t.scrollUntilVisible(f, 250, scrollable: sc.first, maxScrolls: 40);
     } catch (_) {}
     return f.evaluate().isNotEmpty;
   }
 
+  Future<void> toTop(WidgetTester t, Finder screen) async {
+    final sc = vScroll(screen);
+    if (sc.evaluate().isEmpty) return;
+    try {
+      await t.drag(sc.first, const Offset(0, 6000));
+    } catch (_) {}
+    await wait(t, 600);
+  }
+
   Finder navTab(String label) =>
       find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
+
+  Finder resultsCount() => find.byWidgetPredicate(
+      (w) => w is Text && RegExp(r'^[1-9][0-9]* نتيجة$').hasMatch(w.data ?? ''));
+
+  /// يفتح قسماً من الرئيسية ويعيد true إن فُتحت شاشته
+  Future<bool> openCategory(WidgetTester t, String name) async {
+    final home = find.byType(HomeScreen);
+    await toTop(t, home);
+    final f = inScreen(home, find.text(name));
+    if (!await scrollTo(t, home, f)) return false;
+    await tapIn(t, f);
+    return waitFor(t, find.byType(CategoryScreen), seconds: 10);
+  }
+
+  /// ينتظر ظهور عناصر في شاشة القسم ويفتح أول عنصر
+  Future<void> openFirstCard(WidgetTester t, String label) async {
+    final cat = find.byType(CategoryScreen);
+    final card = inScreen(cat, find.byType(ItemCard));
+    final shown = await waitFor(t, card, seconds: 15) || await scrollTo(t, cat, card);
+    check(shown, 'عناصر $label ظهرت');
+    if (!shown) return;
+    await tapIn(t, card);
+    final opened = await waitFor(t, find.byType(DetailScreen), seconds: 10);
+    check(opened, 'صفحة تفاصيل عنصر من $label فتحت');
+    if (opened) {
+      await wait(t, 2000);
+      await shot(t, 'detail-$label');
+      try {
+        await t.drag(vScroll(find.byType(DetailScreen)).first, const Offset(0, -900));
+        await shot(t, 'detail-$label-more');
+      } catch (_) {}
+      await back(t);
+    }
+  }
 
   testWidgets('جولة كاملة في التطبيق على محاكي أبل', (t) async {
     final originalOnError = FlutterError.onError;
@@ -109,79 +166,112 @@ void main() {
       check(AppState.I.publicCards.isNotEmpty, 'بيانات العناصر تحمّلت (${AppState.I.publicCards.length} عنصر)');
       await shot(t, 'home');
       try {
-        await t.drag(find.byType(Scrollable).first, const Offset(0, -700));
+        await t.drag(vScroll(find.byType(HomeScreen)).first, const Offset(0, -700));
       } catch (_) {}
       await shot(t, 'home-scrolled');
-      try {
-        await t.drag(find.byType(Scrollable).first, const Offset(0, 3000));
-      } catch (_) {}
-      await wait(t, 800);
+      await toTop(t, find.byType(HomeScreen));
 
-      // ---------- قسم عادي وعنصر وتفاصيله ----------
-      AppCategory? pick;
-      for (final c in cats) {
-        if (!Cfg.publicSections.containsKey(c.key) && AppState.I.catCount(c.key) > 0) {
-          pick = c;
-          break;
-        }
-      }
-      if (pick != null) {
-        final opened = await scrollTo(t, find.text(pick.name)) && await tapIn(t, find.text(pick.name));
-        check(opened, 'فتح قسم «${pick.name}»');
+      // ---------- المدرسون: الاختصاصات ثم العناصر ثم التفاصيل ----------
+      final teachers = AppState.I.catByKey('مدرسين');
+      if (teachers != null) {
+        final opened = await openCategory(t, teachers.name);
+        check(opened, 'فتح قسم «${teachers.name}»');
         if (opened) {
           await wait(t, 2500);
-          await shot(t, 'category');
-          final hasCards = await waitFor(t, find.byType(ItemCard), seconds: 15);
-          check(hasCards, 'عناصر قسم «${pick.name}» ظهرت');
-          if (hasCards && await tapIn(t, find.byType(ItemCard))) {
-            await wait(t, 2500);
-            await shot(t, 'detail');
-            check(find.byType(DetailScreen).evaluate().isNotEmpty, 'صفحة تفاصيل العنصر فتحت');
-            await back(t);
+          await shot(t, 'teachers-specialties');
+          final cat = find.byType(CategoryScreen);
+          var tapped = false;
+          for (final sp in AppState.I.specialtyList('مدرسين')) {
+            final f = inScreen(cat, find.text(sp));
+            if (f.evaluate().isNotEmpty) {
+              await tapIn(t, f);
+              tapped = true;
+              await shot(t, 'teachers-list');
+              break;
+            }
           }
+          check(tapped, 'اختيار اختصاص في قسم المدرسين');
+          if (tapped) await openFirstCard(t, 'المدرسين');
           await back(t);
         }
-      } else {
-        problems.add('لا يوجد قسم عادي فيه عناصر للفحص');
       }
 
-      // ---------- قسم هرمي (المدارس / المعاهد) ----------
-      String? hierName;
+      // ---------- قسم عادي فيه عناصر ----------
+      AppCategory? plain;
       for (final c in cats) {
-        if (Cfg.publicSections.containsKey(c.key)) {
-          hierName = c.name;
+        if (c.key != 'مدرسين' &&
+            !c.hier &&
+            !Cfg.publicSections.containsKey(c.key) &&
+            AppState.I.catCount(c.key) > 0) {
+          plain = c;
           break;
         }
       }
-      if (hierName != null) {
-        final opened = await scrollTo(t, find.text(hierName)) && await tapIn(t, find.text(hierName));
-        check(opened, 'فتح قسم «$hierName» (تصفّح حسب المحافظة والمنطقة)');
+      if (plain != null) {
+        final opened = await openCategory(t, plain.name);
+        check(opened, 'فتح قسم «${plain.name}»');
         if (opened) {
-          await wait(t, 4000);
-          await shot(t, 'hier-gov');
-          if (await tapIn(t, find.text(Cfg.maysanGov))) {
-            await wait(t, 2500);
-            await shot(t, 'hier-areas');
-            await back(t);
+          await wait(t, 2500);
+          await shot(t, 'category-${plain.key}');
+          await openFirstCard(t, plain.name);
+          await back(t);
+        }
+      }
+
+      // ---------- المعاهد والمدارس (حسب المنطقة / المحافظة) ----------
+      for (final c in cats.where((c) => Cfg.publicSections.containsKey(c.key))) {
+        final opened = await openCategory(t, c.name);
+        check(opened, 'فتح قسم «${c.name}»');
+        if (!opened) continue;
+        await wait(t, 4000);
+        await shot(t, 'cat-${c.key}');
+        final cat = find.byType(CategoryScreen);
+        // المدارس: المحافظة أولاً
+        final gov = inScreen(cat, find.text(Cfg.maysanGov));
+        if (gov.evaluate().isNotEmpty) {
+          await tapIn(t, gov);
+          await wait(t, 2000);
+          await shot(t, 'cat-${c.key}-gov');
+        }
+        var area = false;
+        for (final a in Cfg.maysanAreas) {
+          final f = inScreen(cat, find.text(a));
+          if (f.evaluate().isNotEmpty) {
+            await tapIn(t, f);
+            area = true;
+            break;
           }
+        }
+        check(area, 'اختيار منطقة في قسم «${c.name}»');
+        if (area) {
+          await wait(t, 3000);
+          await shot(t, 'cat-${c.key}-area');
+          final card = inScreen(cat, find.byType(ItemCard));
+          final empty = find.textContaining('لا ').evaluate().isNotEmpty;
+          check(await waitFor(t, card, seconds: 12) || empty, 'عناصر «${c.name}» في المنطقة تظهر');
+        }
+        // الرجوع إلى الرئيسية
+        while (navigatorKey.currentState?.canPop() ?? false) {
           await back(t);
         }
       }
 
       // ---------- البحث ----------
       if (await tapIn(t, find.byTooltip('بحث'))) {
-        final field = find.byType(TextField);
+        final search = find.byType(SearchScreen);
+        final field = inScreen(search, find.byType(TextField));
         if (field.evaluate().isNotEmpty) {
           final sample = AppState.I.publicCards.isNotEmpty ? AppState.I.publicCards.first.name : 'مدرس';
           final q = sample.length > 4 ? sample.substring(0, 4) : sample;
           await t.enterText(field.first, q);
           await wait(t, 2500);
-          check(find.byType(ItemCard).evaluate().isNotEmpty, 'البحث يعطي نتائج («$q»)');
+          FocusManager.instance.primaryFocus?.unfocus();
+          await wait(t, 800);
+          check(await waitFor(t, inScreen(search, resultsCount()), seconds: 8), 'البحث يعطي نتائج («$q»)');
           await shot(t, 'search');
         } else {
           problems.add('حقل البحث غير موجود');
         }
-        FocusManager.instance.primaryFocus?.unfocus();
         await back(t);
       } else {
         problems.add('زر البحث غير موجود');
@@ -196,35 +286,42 @@ void main() {
       }
 
       // ---------- المزيد ----------
-      check(find.text('عن الشركة المطوّرة').evaluate().isEmpty &&
-              !await scrollTo(t, find.text('عن الشركة المطوّرة')),
+      final more = find.byType(MoreScreen);
+      check(inScreen(more, find.text('عن الشركة المطوّرة')).evaluate().isEmpty &&
+              !await scrollTo(t, more, inScreen(more, find.text('عن الشركة المطوّرة'))),
           '«عن الشركة المطوّرة» مخفية في الآيفون');
-      await t.drag(find.byType(Scrollable).first, const Offset(0, 4000));
-      await wait(t, 600);
+      await shot(t, 'more-bottom');
+      await toTop(t, more);
 
-      if (await scrollTo(t, find.text('الوضع الليلي'))) {
-        await tapIn(t, find.text('الوضع الليلي'));
+      final darkTile = inScreen(more, find.text('الوضع الليلي'));
+      if (await scrollTo(t, more, darkTile)) {
+        await tapIn(t, darkTile);
         await wait(t, 1200);
         await shot(t, 'dark-mode');
-        await tapIn(t, find.text('الوضع الليلي'));
+        check(AppState.I.isDark, 'الوضع الليلي يعمل');
+        await tapIn(t, darkTile);
       }
 
-      if (await scrollTo(t, find.text('سياسة الخصوصية')) && await tapIn(t, find.text('سياسة الخصوصية'))) {
+      final privacy = inScreen(more, find.text('سياسة الخصوصية'));
+      if (await scrollTo(t, more, privacy) && await tapIn(t, privacy)) {
         await wait(t, 1500);
         await shot(t, 'privacy');
         check(navigatorKey.currentState!.canPop(), 'صفحة سياسة الخصوصية تفتح');
         await back(t);
+      } else {
+        problems.add('سياسة الخصوصية غير موجودة في المزيد');
       }
 
-      if (await scrollTo(t, find.text('عن التطبيق')) && await tapIn(t, find.text('عن التطبيق'))) {
+      final about = inScreen(more, find.text('عن التطبيق'));
+      if (await scrollTo(t, more, about) && await tapIn(t, about)) {
         await wait(t, 1500);
         await shot(t, 'about-app');
         await back(t);
       }
 
       // ---------- دخول المدير ----------
-      final adminBtn = find.text('دخول المدير');
-      final adminVisible = await scrollTo(t, adminBtn);
+      final adminBtn = inScreen(more, find.text('دخول المدير'));
+      final adminVisible = await scrollTo(t, more, adminBtn);
       check(adminVisible, 'زر «دخول المدير» ظاهر في المزيد');
       if (adminVisible && await tapIn(t, adminBtn)) {
         await wait(t, 1500);
@@ -253,15 +350,19 @@ void main() {
             check(find.textContaining('حساب تجريبي للعرض فقط').evaluate().isNotEmpty,
                 'لوحة الحساب التجريبي تعرض «عرض فقط»');
             await shot(t, 'admin-demo-home');
-            await t.drag(find.byType(Scrollable).first, const Offset(0, -900));
-            await shot(t, 'admin-demo-sections');
+            try {
+              await t.drag(vScroll(find.byType(AdminHomeScreen)).first, const Offset(0, -900));
+              await shot(t, 'admin-demo-sections');
+            } catch (_) {}
           }
         }
         await back(t);
       }
     } finally {
       FlutterError.onError = originalOnError;
+      // لا تحذف صور الشاشات المحفوظة في reportData
       binding.reportData = <String, dynamic>{
+        ...?binding.reportData,
         'passed': passed,
         'problems': problems,
         'flutterErrors': errors,
