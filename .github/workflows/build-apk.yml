@@ -10,6 +10,9 @@ on:
       - 'ios/**'
       - '.github/workflows/ios-scaffold.yml'
       - '.github/workflows/build-ios.yml'
+      - '.github/workflows/test-ios.yml'
+      - 'integration_test/**'
+      - 'test_driver/**'
   pull_request:
   workflow_dispatch:
 

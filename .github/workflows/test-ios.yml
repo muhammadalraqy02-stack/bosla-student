@@ -1,0 +1,146 @@
+# فحص نسخة iOS على محاكي أبل (iPhone و iPad) قبل الرفع إلى App Store:
+# يشغّل التطبيق ويتنقّل في كل الشاشات تلقائياً (integration_test)، ويحفظ صورة لكل شاشة،
+# ويجمع سجل الجهاز وأي تقرير انهيار، ثم ينشرها في Releases باسم ios-test-N.
+# يعمل يدوياً من تبويب Actions ← Test iOS (Simulator) ← Run workflow.
+# اختياري: أضف أسرار المستودع DEMO_USER و DEMO_PASS لفحص الحساب التجريبي (عرض فقط).
+name: Test iOS (Simulator)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sim:
+    name: Test on ${{ matrix.device }}
+    runs-on: macos-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.35.x'
+          cache: true
+
+      - name: Install packages
+        run: flutter pub get
+
+      - name: Pick and boot simulator
+        id: sim
+        run: |
+          python3 - "${{ matrix.device }}" > sim.txt <<'PY'
+          import json, re, subprocess, sys
+          kind = sys.argv[1]
+          data = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))
+          best = None
+          for rt, devs in data['devices'].items():
+              m = re.search(r'iOS-(\d+)-(\d+)', rt)
+              if not m:
+                  continue
+              ver = (int(m.group(1)), int(m.group(2)))
+              for d in devs:
+                  n = d['name']
+                  if kind == 'iphone' and not n.startswith('iPhone'):
+                      continue
+                  if kind == 'ipad' and not n.startswith('iPad'):
+                      continue
+                  score = (ver, 'Pro' in n, 'Max' not in n and 'mini' not in n)
+                  if best is None or score > best[0]:
+                      best = (score, d['udid'], n, '%d.%d' % ver)
+          print(best[1]); print(best[2] + ' — iOS ' + best[3])
+          PY
+          UDID=$(sed -n 1p sim.txt); NAME=$(sed -n 2p sim.txt)
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Simulator: $NAME ($UDID)"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Run app tour on simulator
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+          DEMO_USER: ${{ secrets.DEMO_USER }}
+          DEMO_PASS: ${{ secrets.DEMO_PASS }}
+        run: |
+          mkdir -p ios_test_out/native
+          # صور حقيقية من شاشة المحاكي (تُظهر أيضاً نوافذ النظام) أثناء تشغيل التطبيق
+          (
+            i=0
+            while [ $i -lt 40 ]; do
+              sleep 8
+              if pgrep -f 'Runner.app/Runner' > /dev/null; then
+                i=$((i+1))
+                xcrun simctl io "$UDID" screenshot "ios_test_out/native/n$(printf %02d $i).png" > /dev/null 2>&1 || true
+              fi
+            done
+          ) &
+          set -o pipefail
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/app_test.dart \
+            -d "$UDID" \
+            --dart-define=DEMO_USER="$DEMO_USER" \
+            --dart-define=DEMO_PASS="$DEMO_PASS" \
+            2>&1 | tee ios_test_out/drive.log
+
+      - name: Collect report and logs
+        if: always()
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+          NAME: ${{ steps.sim.outputs.name }}
+        run: |
+          mkdir -p ios_test_out/crashes
+          echo "$NAME" > ios_test_out/device.txt
+          cp build/integration_response_data.json ios_test_out/ 2>/dev/null || true
+          grep 'IOS-CHECK' ios_test_out/drive.log > ios_test_out/summary.txt || true
+          xcrun simctl spawn "$UDID" log show --last 60m --style compact --predicate 'process == "Runner"' 2>/dev/null \
+            | tail -n 4000 > ios_test_out/device.log || true
+          find ~/Library/Logs/DiagnosticReports -iname '*Runner*' -exec cp {} ios_test_out/crashes/ \; 2>/dev/null || true
+          echo "== $NAME =="; cat ios_test_out/summary.txt
+          ls -R ios_test_out | head -80
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-${{ matrix.device }}
+          path: ios_test_out
+          retention-days: 14
+
+  publish:
+    name: Publish results
+    needs: sim
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download results
+        uses: actions/download-artifact@v4
+        with:
+          path: out
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          for d in */; do (cd "$d" && zip -qr "../${d%/}.zip" .); done
+          ls -la
+          gh release create "ios-test-${{ github.run_number }}" ./*.zip \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --prerelease --latest=false \
+            --title "فحص الآيفون على المحاكي #${{ github.run_number }}" \
+            --notes "صور الشاشات وتقرير فحص نسخة iOS على محاكي iPhone و iPad (للمراجعة فقط — ليس ملف تثبيت)."
