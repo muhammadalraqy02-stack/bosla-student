@@ -1,6 +1,7 @@
 // سياسة الخصوصية، سياسة الأطفال، شروط الاستخدام، حذف بياناتي، الدعم والتواصل
 // + نافذتا «عن التطبيق» و«عن الشركة المطوّرة» (نصهما من لوحة الإدارة)
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
@@ -300,11 +301,13 @@ class _LegalScreenState extends State<LegalScreen> with SingleTickerProviderStat
               icon: Icons.info_outline,
               onPressed: () => showInfoPage(context, app: true),
             ),
-            SoftButton(
-              'الجهة المطوّرة',
-              icon: Icons.business,
-              onPressed: () => showInfoPage(context, app: false),
-            ),
+            // «الجهة المطوّرة» لا تظهر في نسخة الآيفون
+            if (defaultTargetPlatform != TargetPlatform.iOS)
+              SoftButton(
+                'الجهة المطوّرة',
+                icon: Icons.business,
+                onPressed: () => showInfoPage(context, app: false),
+              ),
           ],
         ),
         ..._faq(context, [

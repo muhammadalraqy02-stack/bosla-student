@@ -1,5 +1,6 @@
 // تبويب «المزيد» — يقابل القائمة الجانبية في نسخة الويب
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../admin/admin_entry.dart';
@@ -218,7 +219,9 @@ class MoreScreen extends StatelessWidget {
                 ),
                 tile(Icons.mark_email_read_outlined, 'اشترك في النشرة البريدية', () => _subscribe(context)),
                 tile(Icons.info_outline, 'عن التطبيق', () => showInfoPage(context, app: true)),
-                tile(Icons.business, 'عن الشركة المطوّرة', () => showInfoPage(context, app: false)),
+                // «عن الشركة المطوّرة» لا يظهر في نسخة الآيفون
+                if (defaultTargetPlatform != TargetPlatform.iOS)
+                  tile(Icons.business, 'عن الشركة المطوّرة', () => showInfoPage(context, app: false)),
                 tile(Icons.headset_mic_outlined, 'الدعم والمساعدة', () => openLegal(context, 'support')),
               ]),
               group('الخصوصية والسياسات', [
