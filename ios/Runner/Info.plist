@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Bosla Student</string>
+	<string>بوصلة الطالب</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -45,5 +45,34 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ar</string>
+		<string>en</string>
+	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>نستخدم موقعك لعرض أقرب المدارس والمعاهد والمدرسين إليك فقط، ولا نحفظه أو نرسله لأي جهة.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>لالتقاط صورة عند اقتراح إضافة مؤسسة تعليمية أو مدرس.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>لاختيار صورة عند اقتراح إضافة مؤسسة تعليمية أو مدرس.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+		<string>tel</string>
+		<string>sms</string>
+		<string>mailto</string>
+		<string>whatsapp</string>
+		<string>tg</string>
+		<string>comgooglemaps</string>
+		<string>maps</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

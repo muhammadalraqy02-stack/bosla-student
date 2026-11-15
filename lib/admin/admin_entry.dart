@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,6 +23,9 @@ Timer? _tapTimer;
 
 /// تُستدعى عند الضغط على الشعار — 5 ضغطات خلال ثانية ونصف بين كل ضغطة وأخرى تفتح الإدارة
 void adminSecretTap(BuildContext context) {
+  // نسخة iOS: دخول المدير مخفي تماماً — مثل نسخة الويب داخل تطبيق iOS (متطلبات أبل، البند 2.3.1).
+  // الإدارة متاحة من تطبيق الأندرويد ولوحة الويب.
+  if (defaultTargetPlatform == TargetPlatform.iOS) return;
   _taps++;
   _tapTimer?.cancel();
   _tapTimer = Timer(const Duration(milliseconds: 1500), () => _taps = 0);

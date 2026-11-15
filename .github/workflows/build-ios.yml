@@ -1,0 +1,70 @@
+# يبني نسخة iOS غير موقّعة (xcarchive) بـ Flutter 3.35 على macOS، ويرفعها إلى صفحة Releases
+# ليأخذها المطوّر ويوقّعها بحساب Apple Developer ويرفعها إلى App Store Connect.
+# يعمل يدوياً من تبويب Actions ← Build iOS (unsigned) ← Run workflow، أو عند تعديل ملفات ios/.
+name: Build iOS (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/build-ios.yml'
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned iOS archive
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.35.x'
+          cache: true
+
+      - name: Versions
+        run: |
+          flutter --version
+          xcodebuild -version
+          pod --version
+
+      - name: Install packages
+        run: flutter pub get
+
+      - name: Build iOS archive (no code signing)
+        run: flutter build ipa --release --no-codesign
+
+      - name: Package archive
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/ios/archive/Runner.xcarchive bosla-student-ios-unsigned.xcarchive.zip
+          ls -la bosla-student-ios-unsigned.xcarchive.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bosla-student-ios-unsigned
+          path: bosla-student-ios-unsigned.xcarchive.zip
+          retention-days: 30
+
+      # نسخة تجريبية (Pre-release) حتى لا تغيّر رابط آخر نسخة أندرويد
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ios-${{ github.run_number }}" bosla-student-ios-unsigned.xcarchive.zip \
+            --target "$GITHUB_SHA" \
+            --title "بوصلة الطالب — iOS غير موقّعة ${{ github.run_number }}" \
+            --notes "نسخة iOS غير موقّعة (xcarchive) — $(flutter --version | head -1) — commit ${GITHUB_SHA::7}. التعليمات للمطوّر في الملف IOS_DEVELOPER.md" \
+            --prerelease --latest=false
