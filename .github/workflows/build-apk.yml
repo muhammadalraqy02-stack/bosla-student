@@ -11,6 +11,7 @@ on:
       - '.github/workflows/ios-scaffold.yml'
       - '.github/workflows/build-ios.yml'
       - '.github/workflows/test-ios.yml'
+      - '.github/workflows/store-assets.yml'
       - 'integration_test/**'
       - 'test_driver/**'
   pull_request:

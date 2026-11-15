@@ -1,0 +1,135 @@
+# صور المتجر ومقطع المعاينة لنسخة iOS من محاكي أبل بالمقاسات المطلوبة:
+#   iPhone 6.9 إنش (1320×2868) و iPad 13 إنش (2064×2752)
+# الصور حقيقية من شاشة المحاكي مع شريط حالة نظيف (9:41، بطارية كاملة)، والفيديو تسجيل حقيقي للتطبيق.
+# يعمل يدوياً من تبويب Actions ← Store assets (iOS) ← Run workflow، والنتائج في Releases باسم store-assets-N.
+name: Store assets (iOS)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: store-assets-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shots:
+    name: Capture on ${{ matrix.device }}
+    runs-on: macos-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.35.x'
+          cache: true
+
+      - name: Install packages
+        run: flutter pub get
+
+      - name: Pick and boot simulator
+        id: sim
+        run: |
+          python3 - "${{ matrix.device }}" > sim.txt <<'PY'
+          import json, re, subprocess, sys
+          kind = sys.argv[1]
+          data = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))
+          best = None
+          for rt, devs in data['devices'].items():
+              m = re.search(r'iOS-(\d+)-(\d+)', rt)
+              if not m:
+                  continue
+              ver = (int(m.group(1)), int(m.group(2)))
+              for d in devs:
+                  n = d['name']
+                  if kind == 'iphone':
+                      if not (n.startswith('iPhone') and 'Pro Max' in n):
+                          continue
+                  elif not (n.startswith('iPad Pro') and '13-inch' in n):
+                      continue
+                  score = (ver, n)
+                  if best is None or score > best[0]:
+                      best = (score, d['udid'], n, '%d.%d' % ver)
+          print(best[1]); print(best[2] + ' — iOS ' + best[3])
+          PY
+          UDID=$(sed -n 1p sim.txt); NAME=$(sed -n 2p sim.txt)
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "Simulator: $NAME ($UDID)"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance light || true
+          xcrun simctl status_bar "$UDID" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
+            --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 || true
+          mkdir -p store
+          echo "$NAME" > store/device.txt
+
+      - name: Capture screenshots and preview video
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          : > drive.log
+          # يراقب علامات الاختبار ويلتقط الصور / يبدأ ويوقف تسجيل الفيديو
+          (
+            tail -n 0 -F drive.log 2>/dev/null | while IFS= read -r line; do
+              case "$line" in
+                *STORESHOT:*)
+                  n="${line##*STORESHOT:}"; n="${n%%[[:space:]]*}"
+                  xcrun simctl io "$UDID" screenshot --type=png "store/$n.png" > /dev/null 2>&1 && echo "captured $n" ;;
+                *STOREVIDEO:start*)
+                  xcrun simctl io "$UDID" recordVideo --codec=h264 --force store/preview-raw.mov > /dev/null 2>&1 &
+                  echo $! > rec.pid; echo "recording started" ;;
+                *STOREVIDEO:stop*)
+                  kill -INT "$(cat rec.pid)" 2>/dev/null; sleep 4; echo "recording stopped" ;;
+              esac
+            done
+          ) &
+          set -o pipefail
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/store_shots_test.dart \
+            -d "$UDID" 2>&1 | tee -a drive.log
+          sleep 6
+          ls -la store
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-${{ matrix.device }}
+          path: store
+          retention-days: 30
+
+  publish:
+    name: Publish assets
+    needs: shots
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download
+        uses: actions/download-artifact@v4
+        with:
+          path: out
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          for d in */; do (cd "$d" && zip -qr "../${d%/}.zip" .); done
+          ls -la
+          gh release create "store-assets-${{ github.run_number }}" ./*.zip \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --prerelease --latest=false \
+            --title "صور ومقطع App Store #${{ github.run_number }}" \
+            --notes "صور iPhone 6.9 إنش و iPad 13 إنش من محاكي أبل، ومقطع المعاينة الخام."
