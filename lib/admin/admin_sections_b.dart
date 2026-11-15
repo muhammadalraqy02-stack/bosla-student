@@ -278,6 +278,7 @@ class _AdminStatsScreenState extends State<AdminStatsScreen> {
                     ),
                   const SizedBox(height: 8),
                   MiniAction(Icons.speed, 'تصفير عدادات الزيارات', () async {
+                    if (demoBlocked()) return;
                     final ok = await confirmDialog(context, 'تصفير عدادات الزيارات والبحث والمستخدمين الجدد؟',
                         ok: 'تصفير', danger: true);
                     if (!ok) return;
@@ -298,6 +299,7 @@ class AdminUsersScreen extends StatelessWidget {
   const AdminUsersScreen({super.key});
 
   Future<void> _add(BuildContext context) async {
+    if (demoBlocked()) return;
     final u = await promptText(context, 'اسم المستخدم الجديد', ltr: true);
     if (u == null || u.trim().isEmpty || !context.mounted) return;
     final pw = await promptText(context, 'كلمة المرور', hint: '10 أحرف على الأقل مع حروف وأرقام', ltr: true);
@@ -327,7 +329,9 @@ class AdminUsersScreen extends StatelessWidget {
               for (final k in keys)
                 Card(
                   child: ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.person)),
+                    leading: CircleAvatar(
+                      child: Icon(isDemoRole(str(s.users[k]!['role'])) ? Icons.visibility_outlined : Icons.person),
+                    ),
                     title: Text(
                       '${str(s.users[k]!['user'])}${str(s.users[k]!['user']) == s.currentUser ? ' (أنت)' : ''}',
                       style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
@@ -337,9 +341,34 @@ class AdminUsersScreen extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          tooltip: isDemoRole(str(s.users[k]!['role']))
+                              ? 'إعادة الصلاحيات الكاملة'
+                              : 'جعله حساباً تجريبياً (عرض فقط)',
+                          icon: Icon(
+                            isDemoRole(str(s.users[k]!['role'])) ? Icons.lock_open_outlined : Icons.visibility_outlined,
+                          ),
+                          onPressed: () async {
+                            if (demoBlocked()) return;
+                            final demo = !isDemoRole(str(s.users[k]!['role']));
+                            final name = str(s.users[k]!['user']);
+                            if (demoBlocked()) return;
+                            final ok = await confirmDialog(
+                              context,
+                              demo
+                                  ? 'جعل «$name» حساباً تجريبياً؟ يستطيع تصفّح كل اللوحة لكن لا يحفظ أي تعديل ولا يرى البيانات الخاصة.'
+                                  : 'إعادة الصلاحيات الكاملة لـ «$name»؟',
+                              ok: demo ? 'نعم، عرض فقط' : 'إعادة الصلاحيات',
+                            );
+                            if (!ok) return;
+                            showResult(await s.setUserDemo(k, demo),
+                                demo ? 'أصبح الحساب تجريبياً (عرض فقط)' : 'أُعيدت الصلاحيات الكاملة');
+                          },
+                        ),
+                        IconButton(
                           tooltip: 'تغيير كلمة المرور',
                           icon: const Icon(Icons.key),
                           onPressed: () async {
+                            if (demoBlocked()) return;
                             final pw = await promptText(context, 'كلمة المرور الجديدة لـ ${str(s.users[k]!['user'])}',
                                 ltr: true);
                             if (pw == null || pw.isEmpty) return;
@@ -350,6 +379,7 @@ class AdminUsersScreen extends StatelessWidget {
                           tooltip: 'حذف',
                           icon: const Icon(Icons.delete_outline, color: Color(0xFFB42318)),
                           onPressed: () async {
+                            if (demoBlocked()) return;
                             final ok = await confirmDialog(context, 'حذف المستخدم ${str(s.users[k]!['user'])}؟',
                                 ok: 'حذف', danger: true);
                             if (!ok) return;
@@ -361,6 +391,12 @@ class AdminUsersScreen extends StatelessWidget {
                   ),
                 ),
               const SizedBox(height: 8),
+              Text(
+                'زر العين 👁 يحوّل الحساب إلى «تجريبي — عرض فقط»: مناسب لحساب مراجعة أبل وجوجل، يتصفّح كل أقسام اللوحة '
+                'دون أن يستطيع الحفظ أو الحذف أو الرفع أو التصدير، وتُخفى عنه بيانات الطلبات الخاصة.',
+                style: TextStyle(fontSize: 12, color: p.text, height: 1.6),
+              ),
+              const SizedBox(height: 6),
               Text(
                 'تنبيه: هذا تحقّق من جهة التطبيق فقط وليس حماية حقيقية. للحماية الفعلية يلزم ربط Firebase Authentication.',
                 style: TextStyle(fontSize: 11, color: p.muted),
@@ -533,6 +569,7 @@ class _AdminMediaScreenState extends State<AdminMediaScreen> {
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFB42318)),
                 onPressed: () async {
+                  if (demoBlocked()) return;
                   final ok = await confirmDialog(
                     context,
                     used ? 'هذه الصورة مستخدمة حالياً. حذفها على أي حال؟' : 'حذف الصورة نهائياً؟',
@@ -573,6 +610,7 @@ class AdminActivityScreen extends StatelessWidget {
                 onPressed: list.isEmpty
                     ? null
                     : () async {
+                        if (demoBlocked()) return;
                         final ok = await confirmDialog(context, 'مسح سجل النشاطات؟', ok: 'مسح', danger: true);
                         if (!ok) return;
                         showResult(await s.clearLog(), 'تم المسح');
@@ -711,6 +749,7 @@ class _AdminDatabaseScreenState extends State<AdminDatabaseScreen> {
                               showResult(ok ? null : 'تعذّر الاتصال بـ Firebase', 'Firebase متصل ويعمل بنجاح');
                             })),
                         MiniAction(Icons.delete_forever_outlined, 'مسح البيانات السحابية', () async {
+                          if (demoBlocked()) return;
                           final ok = await confirmTyped(
                               context, 'سيتم حذف كل البيانات والصور القديمة من فايربيس نهائياً. متأكد؟', 'حذف فايربيس');
                           if (!ok) return;
@@ -761,6 +800,7 @@ class _AdminDatabaseScreenState extends State<AdminDatabaseScreen> {
                               showResult(r == 'OK' ? null : r, 'Supabase يعمل — رفع الصورة وعرضها للعامة والحذف ناجح');
                             })),
                         MiniAction(Icons.swap_horiz, 'ترحيل الصور القديمة ($_legacy)', () async {
+                          if (demoBlocked()) return;
                           final ok = await confirmDialog(
                             context,
                             'سيتم نقل كل الصور المخزّنة داخل فايربيس إلى Supabase، ثم استبدال المراجع بالروابط وحذفها من فايربيس. متابعة؟',
@@ -833,6 +873,7 @@ class AdminBackupPanel extends StatelessWidget {
       return;
     }
     if (text == null || !context.mounted) return;
+    if (demoBlocked()) return;
     final ok = await confirmDialog(context, 'سيتم استبدال جميع البيانات الحالية. متابعة؟', ok: 'استيراد', danger: true);
     if (!ok) return;
     toast('جاري الاستيراد...');
@@ -860,12 +901,14 @@ class AdminBackupPanel extends StatelessWidget {
               if (r != null) toast(r, ToastType.err);
             }),
             MiniAction(Icons.speed, 'تصفير عدادات الزيارات', () async {
+              if (demoBlocked()) return;
               final ok = await confirmDialog(context, 'تصفير عدادات الزيارات والبحث والمستخدمين الجدد؟',
                   ok: 'تصفير', danger: true);
               if (!ok) return;
               showResult(await s.resetCounters(), 'تم التصفير');
             }, danger: true),
             MiniAction(Icons.restart_alt, 'إعادة ضبط المصنع', () async {
+              if (demoBlocked()) return;
               final ok = await confirmTyped(
                   context, 'سيتم مسح كل البيانات في فايربيس والعودة للوضع الافتراضي. متأكد؟', 'إعادة ضبط');
               if (!ok) return;

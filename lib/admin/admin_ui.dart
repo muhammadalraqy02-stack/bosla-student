@@ -5,6 +5,14 @@ import 'package:image_picker/image_picker.dart';
 
 import '../ui.dart';
 import '../widgets/common.dart';
+import 'admin_store.dart';
+
+/// للحساب التجريبي: يعرض تنبيهاً ويعيد true لإيقاف أي إجراء يغيّر البيانات
+bool demoBlocked() {
+  if (!AdminStore.I.isDemo) return false;
+  toast(AdminStore.demoMsg, ToastType.warn);
+  return true;
+}
 
 Color hexColor(String h, [Color fallback = const Color(0xFF64748B)]) {
   var s = h.trim().replaceFirst('#', '');
@@ -58,6 +66,7 @@ Future<String?> promptText(
 
 /// تأكيد بكتابة عبارة محددة (للعمليات الخطرة)
 Future<bool> confirmTyped(BuildContext context, String message, String phrase) async {
+  if (demoBlocked()) return false;
   final ok = await confirmDialog(context, message, ok: 'متابعة', danger: true);
   if (!ok || !context.mounted) return false;
   final t = await promptText(context, 'للتأكيد اكتب: $phrase');
@@ -163,6 +172,7 @@ Future<String?> pickColor(BuildContext context, String current, {String title = 
 
 /// اختيار صورة من المعرض أو الكاميرا
 Future<XFile?> pickImageFile(BuildContext context, {double maxW = 1600, double maxH = 1600, int quality = 72}) async {
+  if (demoBlocked()) return null;
   final src = await showModalBottomSheet<ImageSource>(
     context: context,
     builder: (ctx) => SafeArea(

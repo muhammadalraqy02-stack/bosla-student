@@ -201,6 +201,7 @@ class _CategoryCard extends StatelessWidget {
                       showResult(await s.moveCategory(index, 1), 'تم تغيير الترتيب');
                     }),
                     _round(Icons.delete_outline, () async {
+                      if (demoBlocked()) return;
                       final ok = await confirmDialog(
                         context,
                         'حذف القسم "${str(c['name'])}"${n > 0 ? ' مع $n عنصر تابع له' : ''}؟',
@@ -383,6 +384,7 @@ class _GovCard extends StatelessWidget {
             icon: const Icon(Icons.delete_outline, size: 20, color: Color(0xFFB42318)),
             onPressed: () async {
               final n = s.govCardCount(name);
+              if (demoBlocked()) return;
               final ok = await confirmDialog(
                 context,
                 'حذف محافظة $name وأقضيتها؟${n > 0 ? ' يوجد $n عنصر مرتبط بها (لن تُحذف عناصره، لكن ستبقى بدون محافظة مسجّلة).' : ''}',
@@ -431,6 +433,7 @@ class _GovCard extends StatelessWidget {
                 onPressed: () async {
                   final dn = str(ds[j]['name']);
                   final n = s.distCardCount(name, dn);
+                  if (demoBlocked()) return;
                   final ok = await confirmDialog(context, 'حذف مركز $dn؟${n > 0 ? ' يوجد $n عنصر مرتبط به.' : ''}',
                       ok: 'حذف', danger: true);
                   if (!ok) return;
@@ -471,6 +474,7 @@ class _GovCard extends StatelessWidget {
             if (ds.isNotEmpty)
               MiniAction(Icons.delete_sweep_outlined, 'حذف الكل', () async {
                 final linked = s.allCards.where((c) => str(c['gov']) == name && str(c['dist']).isNotEmpty).length;
+                if (demoBlocked()) return;
                 final ok = await confirmDialog(
                   context,
                   'حذف كل المراكز (${ds.length}) من $name؟${linked > 0 ? ' يوجد $linked عنصر مرتبط بمراكز (لن تُحذف عناصره).' : ''}',
@@ -701,6 +705,7 @@ class _AdminAdsScreenState extends State<AdminAdsScreen> {
                       showResult(await s.toggleAd(id), active ? 'تم إخفاء اللوحة' : 'تم عرض اللوحة');
                     }),
                     MiniAction(Icons.delete_outline, 'حذف', () async {
+                      if (demoBlocked()) return;
                       final ok = await confirmDialog(
                         context,
                         'حذف هذه اللوحة الإعلانية${str(a['title']).isNotEmpty ? ' "${str(a['title'])}"' : ''}؟',

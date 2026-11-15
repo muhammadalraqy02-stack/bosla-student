@@ -215,6 +215,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Future<void> _changePass() async {
+    if (demoBlocked()) return;
     final np = await askNewPassword(context, title: 'تغيير كلمة المرور');
     if (np == null) return;
     final r = await AdminStore.I.changePassword(np);
@@ -280,9 +281,29 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       Text('أهلاً $me', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: p.text)),
                       const SizedBox(height: 4),
                       Text(
-                        'التعديلات تُحفظ في قاعدة البيانات نفسها وتظهر للزوار وفي لوحة الويب.',
+                        s.isDemo
+                            ? 'يمكنك تصفّح كل أقسام لوحة الإدارة.'
+                            : 'التعديلات تُحفظ في قاعدة البيانات نفسها وتظهر للزوار وفي لوحة الويب.',
                         style: TextStyle(fontSize: 12, color: p.muted, height: 1.5),
                       ),
+                      if (s.isDemo) ...[
+                        const SizedBox(height: 12),
+                        NoteBox(
+                          child: Row(
+                            children: [
+                              Icon(Icons.visibility_outlined, color: p.brandOn),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'حساب تجريبي للعرض فقط — يمكنك فتح كل الأقسام ومشاهدتها، لكن لا يُحفظ أي تعديل '
+                                  'ولا تظهر البيانات الخاصة.',
+                                  style: TextStyle(color: p.text, height: 1.6, fontSize: 12.5, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (s.legacyFormat) ...[
                         const SizedBox(height: 12),
                         NoteBox(

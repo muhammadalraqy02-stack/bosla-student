@@ -113,7 +113,7 @@ extension AdminOps on AdminStore {
   List<Json> ordered(Map<String, Json> m) => [for (final k in _sortedKeys(m)) m[k]!];
 
   Future<String?> _run(Future<void> Function() fn) async {
-    if (legacyFormat) return AdminStore._legacyMsg;
+    if (writeBlock != null) return writeBlock;
     try {
       await fn();
       changed();
@@ -123,7 +123,7 @@ extension AdminOps on AdminStore {
       return e.message;
     } catch (_) {
       changed();
-      return AdminStore._netMsg;
+      return _netMsg;
     }
   }
 
@@ -149,7 +149,7 @@ extension AdminOps on AdminStore {
         pb[k] = n;
       }
       if (pb.isNotEmpty) {
-        await Api.fbPatch('${Cfg.fbPublic}/${e.key}', pb);
+        await _fbPatch('${Cfg.fbPublic}/${e.key}', pb);
         await _bumpPublic(e.key);
       }
     }
@@ -272,7 +272,7 @@ extension AdminOps on AdminStore {
         }
         final code = pubCode(key);
         if (code != null && (pubReady[code] ?? false) && (pubCards[code]?.isNotEmpty ?? false)) {
-          await Api.fbDelete('${Cfg.fbPublic}/$code');
+          await _fbDelete('${Cfg.fbPublic}/$code');
           pubCards[code]!.clear();
           await _bumpPublic(code);
         }
@@ -399,6 +399,7 @@ extension AdminOps on AdminStore {
 
   /// إضافة دفعة مراكز (سطر أو فاصلة لكل مركز). يعيد (الخطأ، عدد المضاف، عدد المكرر)
   Future<(String?, int, int)> addDistBulk(String id, String raw) async {
+    if (writeBlock != null) return (writeBlock, 0, 0);
     final g = geo[id];
     if (g == null) return (null, 0, 0);
     final names = raw.split(RegExp(r'[\n\r,،;؛|]+')).map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
@@ -434,13 +435,13 @@ extension AdminOps on AdminStore {
     if (ds.any((d) => str(d['name']) == n)) return 'الاسم مستخدم';
     ds[j] = Map<String, dynamic>.from(ds[j])..['name'] = n;
     final gName = str(g['name']);
-    if (legacyFormat) return AdminStore._legacyMsg;
+    if (writeBlock != null) return writeBlock;
     Json extra;
     try {
       extra = await _rewriteCards(
           (c) => str(c['gov']) == gName && str(c['dist']) == old, (c) => c['dist'] = n);
     } catch (_) {
-      return AdminStore._netMsg;
+      return _netMsg;
     }
     return _setDists(id, ds, log: 'تعديل مركز: $old ← $n', extra: extra);
   }
@@ -526,14 +527,14 @@ extension AdminOps on AdminStore {
       'u': url, 'p': path, 'kb': kb, 'at': nowIso(), 'n': clip(fileName, 80),
       'h': hash, 'w': w, 'ht': h, 'kind': 'ad',
     };
-    await Api.fbPut('${Cfg.fbRoot}/mediaIndex/$id', rec);
+    await _fbPut('${Cfg.fbRoot}/mediaIndex/$id', rec);
     mediaIndex?[id] = rec;
     return (url, meta);
   }
 
   /// إضافة لوحة إعلانية. يعيد (الخطأ، معرّف اللوحة الجديدة)
   Future<(String?, String)> addAd(Uint8List bytes, String fileName) async {
-    if (legacyFormat) return (AdminStore._legacyMsg, '');
+    if (writeBlock != null) return (writeBlock, '');
     try {
       final (url, meta) = await _uploadAdImage(bytes, fileName);
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -708,7 +709,7 @@ extension AdminOps on AdminStore {
       });
 
   Future<String?> resetCounters() => _run(() async {
-        await Api.fbPatch(Cfg.fbMetrics, {'visits': 0, 'newUsers': 0, 'searches': 0});
+        await _fbPatch(Cfg.fbMetrics, {'visits': 0, 'newUsers': 0, 'searches': 0});
         metrics = {'visits': 0, 'newUsers': 0, 'searches': 0};
         await _patchCore({}, log: 'تصفير العدادات', icon: 'fa-solid fa-gauge');
       });
@@ -774,6 +775,10 @@ extension AdminOps on AdminStore {
         if (u == null) return;
         if (users.length == 1) throw const AdminError('لا يمكن حذف آخر حساب إداري');
         if (str(u['user']) == currentUser) throw const AdminError('لا يمكنك حذف حسابك الحالي');
+        if (!isDemoRole(str(u['role'])) &&
+            !users.entries.any((e) => e.key != key && !isDemoRole(str(e.value['role'])))) {
+          throw const AdminError('يجب أن يبقى حساب مدير واحد على الأقل بصلاحيات كاملة');
+        }
         await _patchCore({..._seedBody('users', users, usersSeeded), 'users/$key': null},
             log: 'حذف مستخدم: ${str(u['user'])}', icon: 'fa-solid fa-user-minus');
         usersSeeded = false;
@@ -789,6 +794,22 @@ extension AdminOps on AdminStore {
         final n = Map<String, dynamic>.from(u)..['pass'] = await makePasswordRecord(pass);
         await _patchCore({..._seedBody('users', users, usersSeeded), 'users/$key': n},
             log: 'تغيير كلمة مرور: ${str(u['user'])}', icon: 'fa-solid fa-key');
+        usersSeeded = false;
+        users[key] = n;
+      });
+
+  /// تحويل حساب إلى «تجريبي — عرض فقط» (لمراجعة المتاجر) أو إعادته مشرفاً بصلاحيات كاملة
+  Future<String?> setUserDemo(String key, bool demo) => _run(() async {
+        final u = users[key];
+        if (u == null) return;
+        if (str(u['user']) == currentUser) throw const AdminError('لا يمكنك تغيير صلاحية حسابك الحالي');
+        if (demo && !users.entries.any((e) => e.key != key && !isDemoRole(str(e.value['role'])))) {
+          throw const AdminError('يجب أن يبقى حساب مدير واحد على الأقل بصلاحيات كاملة');
+        }
+        final n = Map<String, dynamic>.from(u)..['role'] = demo ? '$kDemoRole (عرض فقط)' : 'مشرف';
+        await _patchCore({..._seedBody('users', users, usersSeeded), 'users/$key': n},
+            log: demo ? 'جعل الحساب تجريبياً (عرض فقط): ${str(u['user'])}' : 'إعادة صلاحيات كاملة: ${str(u['user'])}',
+            icon: 'fa-solid fa-user-shield');
         usersSeeded = false;
         users[key] = n;
       });
@@ -846,7 +867,7 @@ extension AdminOps on AdminStore {
   }
 
   Future<bool> cleanupUnusedMediaRef(String ref) async {
-    if (ref.isEmpty || mediaUsed(ref)) return false;
+    if (ref.isEmpty || isDemo || mediaUsed(ref)) return false;
     final idx = await loadMediaIndex();
     MapEntry<String, Json>? rec;
     for (final e in idx.entries) {
@@ -859,7 +880,7 @@ extension AdminOps on AdminStore {
       if (path.isEmpty) return false;
       await supaDeletePath(path);
       if (rec != null) {
-        await Api.fbDelete('${Cfg.fbRoot}/mediaIndex/${rec.key}');
+        await _fbDelete('${Cfg.fbRoot}/mediaIndex/${rec.key}');
         mediaIndex?.remove(rec.key);
       }
       return true;
@@ -869,12 +890,13 @@ extension AdminOps on AdminStore {
   }
 
   Future<String?> deleteMedia(String id) async {
+    if (isDemo) return AdminStore.demoMsg;
     final it = mediaIndex?[id];
     if (it == null) return null;
     try {
       final p = str(it['p']).isNotEmpty ? str(it['p']) : supaPathFromUrl(str(it['u']));
       await supaDeletePath(p);
-      await Api.fbDelete('${Cfg.fbRoot}/mediaIndex/$id');
+      await _fbDelete('${Cfg.fbRoot}/mediaIndex/$id');
       mediaIndex?.remove(id);
       changed();
       return null;
@@ -919,9 +941,10 @@ extension AdminOps on AdminStore {
 
   /// رفع كامل لبيانات core الحالية (يرحّل الصيغة القديمة إلى map2) — نفس forcePush
   Future<String?> fullPush() async {
+    if (isDemo) return AdminStore.demoMsg;
     try {
       final snap = _coreSnapshot();
-      await Api.fbPut(Cfg.fbCore, snap);
+      await _fbPut(Cfg.fbCore, snap);
       legacyFormat = false;
       catsSeeded = false;
       geoSeeded = false;
@@ -931,17 +954,18 @@ extension AdminOps on AdminStore {
       changed();
       return null;
     } catch (_) {
-      return AdminStore._netMsg;
+      return _netMsg;
     }
   }
 
   /// مسح البيانات السحابية (core و public و publicVersion والصور القديمة) — نفس wipeCloud
   Future<String?> wipeCloud({bool keepMedia = false}) async {
+    if (isDemo) return AdminStore.demoMsg;
     try {
-      await Api.fbDelete(Cfg.fbCore);
-      await Api.fbDelete(Cfg.fbPublic);
-      await Api.fbDelete(Cfg.fbPublicVersion);
-      if (!keepMedia) await Api.fbDelete(Cfg.fbMedia);
+      await _fbDelete(Cfg.fbCore);
+      await _fbDelete(Cfg.fbPublic);
+      await _fbDelete(Cfg.fbPublicVersion);
+      if (!keepMedia) await _fbDelete(Cfg.fbMedia);
       await load();
       unawaited(AppState.I.checkRemote());
       return null;
@@ -964,6 +988,7 @@ extension AdminOps on AdminStore {
 
   /// اختبار الرفع والقراءة العامة والحذف — نفس testSupabase
   Future<String> testSupabase() async {
+    if (isDemo) return AdminStore.demoMsg;
     try {
       final (url, path) = await supaUpload(_testGif, 'healthcheck', contentType: 'image/gif');
       if (!await supaPublicReady(url)) {
@@ -1010,6 +1035,7 @@ extension AdminOps on AdminStore {
 
   /// ترحيل صور base64 القديمة من فايربيس إلى Supabase — نفس migrateMediaToSupabase. يعيد (المنجز، المتعذّر)
   Future<(int, int)> migrateLegacyMedia() async {
+    if (isDemo) throw const AdminError(AdminStore.demoMsg);
     var done = 0, fail = 0;
     Map<String, dynamic> all = {};
     final v = await Api.fbGet(Cfg.fbMedia);
@@ -1022,7 +1048,7 @@ extension AdminOps on AdminStore {
       final rec = <String, dynamic>{
         'u': url, 'p': path, 'kb': (val.length * 0.75 / 1024).round(), 'at': nowIso(), 'n': id,
       };
-      await Api.fbPut('${Cfg.fbRoot}/mediaIndex/$id', rec);
+      await _fbPut('${Cfg.fbRoot}/mediaIndex/$id', rec);
       mediaIndex?[id] = rec;
       return url;
     }
@@ -1040,7 +1066,7 @@ extension AdminOps on AdminStore {
           continue;
         }
         await _replaceRef('media:${e.key}', url);
-        await Api.fbDelete('${Cfg.fbMedia}/${e.key}');
+        await _fbDelete('${Cfg.fbMedia}/${e.key}');
         done++;
       } catch (_) {
         fail++;
@@ -1100,6 +1126,7 @@ extension AdminOps on AdminStore {
   }
 
   Future<String?> exportJson() async {
+    if (isDemo) return AdminStore.demoMsg;
     try {
       await _shareFile('knowledge-platform-${todayIso()}.json',
           const JsonEncoder.withIndent('  ').convert(exportObject()), 'application/json');
@@ -1111,6 +1138,7 @@ extension AdminOps on AdminStore {
 
   /// تصدير العناصر بصيغة CSV — نفس exportCSV
   Future<String?> exportCsv() async {
+    if (isDemo) return AdminStore.demoMsg;
     String safe(dynamic v) {
       var s = v == null ? '' : v.toString();
       if (RegExp(r'^[=+\-@]').hasMatch(s)) s = "'$s";
@@ -1133,6 +1161,7 @@ extension AdminOps on AdminStore {
 
   /// اختيار ملف JSON للاستيراد (حتى 5MB)
   Future<String?> pickImportFile() async {
+    if (isDemo) throw const AdminError(AdminStore.demoMsg);
     final f = await fs.openFile();
     if (f == null) return null;
     if (await f.length() > 5 * 1024 * 1024) throw const AdminError('ملف الاستيراد أكبر من الحد المسموح (5MB)');
@@ -1141,7 +1170,7 @@ extension AdminOps on AdminStore {
 
   /// استيراد نسخة احتياطية واستبدال البيانات — نفس importData
   Future<String?> importJson(String text) async {
-    if (legacyFormat) return AdminStore._legacyMsg;
+    if (writeBlock != null) return writeBlock;
     dynamic d;
     try {
       d = jsonDecode(text);
@@ -1173,10 +1202,10 @@ extension AdminOps on AdminStore {
       core['_empty'] = {for (final k in _emptyFlagKeys) k: (core[k] as Map).isEmpty};
       core['_by'] = _client;
       core['_rev'] = DateTime.now().millisecondsSinceEpoch;
-      await Api.fbPut(Cfg.fbCore, core);
+      await _fbPut(Cfg.fbCore, core);
       for (final code in pub.keys) {
         if (!(pubReady[code] ?? false)) continue;
-        await Api.fbPut('${Cfg.fbPublic}/$code', pub[code]);
+        await _fbPut('${Cfg.fbPublic}/$code', pub[code]);
         pubCards[code] = pub[code]!;
         await _bumpPublic(code);
       }
@@ -1188,7 +1217,7 @@ extension AdminOps on AdminStore {
       changed();
       return null;
     } catch (_) {
-      return AdminStore._netMsg;
+      return _netMsg;
     }
   }
 }

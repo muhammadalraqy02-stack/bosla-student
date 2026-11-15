@@ -55,7 +55,9 @@ class AdminRequestsScreen extends StatelessWidget {
             }
             final (priv, img) = snap.data!;
             final rows = <Widget>[];
-            if (priv == null || priv.isEmpty) {
+            if (AdminStore.I.isDemo) {
+              rows.add(const Text('البيانات الخاصة (الاسم، الهاتف، الصورة) مخفية في الحساب التجريبي.'));
+            } else if (priv == null || priv.isEmpty) {
               rows.add(const Text('لا توجد بيانات خاصة.'));
             } else {
               _labels.forEach((k, label) {
@@ -108,6 +110,7 @@ class AdminRequestsScreen extends StatelessWidget {
         final s = AdminStore.I;
         final p = Pal.of(context);
         final list = s.requestList;
+        final demo = s.isDemo;
         return Scaffold(
           appBar: AppBar(
             title: Text('الطلبات (${fmtNum(list.length)})'),
@@ -128,6 +131,7 @@ class AdminRequestsScreen extends StatelessWidget {
                 onPressed: list.isEmpty
                     ? null
                     : () async {
+                        if (demoBlocked()) return;
                         final ok = await confirmDialog(context, 'مسح جميع الطلبات؟', ok: 'مسح', danger: true);
                         if (!ok) return;
                         showResult(await s.clearRequests(), 'تم المسح');
@@ -182,10 +186,11 @@ class AdminRequestsScreen extends StatelessWidget {
                           ),
                           if (str(r['msg']).isNotEmpty) ...[
                             const SizedBox(height: 6),
-                            Text(str(r['msg']), style: TextStyle(color: p.text, height: 1.6, fontSize: 13)),
+                            Text(demo ? 'نص الطلب مخفي في الحساب التجريبي' : str(r['msg']),
+                                style: TextStyle(color: demo ? p.muted : p.text, height: 1.6, fontSize: 13)),
                           ],
                           const SizedBox(height: 4),
-                          Text('${str(r['from'])} · ${timeAgo(str(r['at']))}',
+                          Text('${demo ? 'مرسل مخفي' : str(r['from'])} · ${timeAgo(str(r['at']))}',
                               style: TextStyle(fontSize: 11, color: p.muted)),
                           const SizedBox(height: 6),
                           Wrap(
@@ -223,6 +228,7 @@ class AdminRequestsScreen extends StatelessWidget {
                                 tooltip: 'حذف',
                                 icon: const Icon(Icons.delete_outline, color: Color(0xFFB42318)),
                                 onPressed: () async {
+                                  if (demoBlocked()) return;
                                   final ok = await confirmDialog(context, 'حذف هذا الطلب؟', ok: 'حذف', danger: true);
                                   if (!ok) return;
                                   final e = await s.deleteRequest(id);
@@ -338,6 +344,7 @@ class AdminNotificationsScreen extends StatelessWidget {
                                 }
                                 if (v == 'toggle') e = await s.toggleNotification(id);
                                 if (v == 'del') {
+                                  if (demoBlocked()) return;
                                   final ok = await confirmDialog(context, 'حذف الإشعار "${str(n['title'])}"؟',
                                       ok: 'حذف', danger: true);
                                   if (!ok) return;

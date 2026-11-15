@@ -35,6 +35,12 @@ const List<String> kRequestStatuses = ['قيد المراجعة', 'تم التو
 /// رمز يعيده login عندما تكون كلمة المرور افتراضية ويجب تغييرها
 const String kNeedNewPassword = '__CHANGE__';
 
+/// دور الحساب التجريبي (للعرض فقط — لمراجعة أبل/جوجل). يُحفظ في حقل role لأن نسخة الويب تحتفظ به.
+const String kDemoRole = 'تجريبي';
+
+/// هل هذا الدور لحساب تجريبي؟
+bool isDemoRole(String role) => role.contains(kDemoRole);
+
 typedef Json = Map<String, dynamic>;
 
 Map<String, Json> _asMap(dynamic v) {
@@ -101,7 +107,40 @@ class AdminStore extends ChangeNotifier {
 
   static const String _legacyMsg =
       'بيانات فايربيس بصيغة قديمة — افتح لوحة الإدارة في نسخة الويب مرة واحدة لترحيلها ثم أعد المحاولة';
-  static const String _netMsg = 'تعذّر الحفظ — تحقق من الاتصال وحاول مجدداً';
+  static const String _netMsgText = 'تعذّر الحفظ — تحقق من الاتصال وحاول مجدداً';
+  static const String demoMsg = 'حساب تجريبي للعرض فقط — لا يمكن حفظ أي تعديل';
+
+  String get _netMsg => isDemo ? demoMsg : _netMsgText;
+
+  /// الحساب الحالي تجريبي (عرض فقط): لا حفظ ولا حذف ولا رفع ولا تصدير ولا بيانات خاصة
+  bool get isDemo {
+    final me = currentUser;
+    final e = me == null ? null : _userEntry(me);
+    return e != null && isDemoRole(str(e.value['role']));
+  }
+
+  /// سبب منع الكتابة إن وُجد (حساب تجريبي أو بيانات بصيغة قديمة)
+  String? get writeBlock => isDemo ? demoMsg : (legacyFormat ? _legacyMsg : null);
+
+  // حماية أخيرة: كل كتابة في فايربيس من اللوحة تمر من هنا وتُرفض للحساب التجريبي
+  void _guard() {
+    if (isDemo) throw const AdminError(demoMsg);
+  }
+
+  Future<void> _fbPatch(String path, Map<String, dynamic> body) async {
+    _guard();
+    await Api.fbPatch(path, body);
+  }
+
+  Future<void> _fbPut(String path, dynamic body) async {
+    _guard();
+    await Api.fbPut(path, body);
+  }
+
+  Future<void> _fbDelete(String path) async {
+    _guard();
+    await Api.fbDelete(path);
+  }
 
   // ======================= التحميل =======================
   Future<bool> load() async {
@@ -205,7 +244,18 @@ class AdminStore extends ChangeNotifier {
       return 'بيانات الدخول غير صحيحة';
     }
     final u = Map<String, dynamic>.from(entry.value);
+    final demo = isDemoRole(str(u['role']));
     var changed = false;
+    if (demo) {
+      // الحساب التجريبي لا يكتب شيئاً — ولا يُقبل بكلمة المرور الافتراضية
+      if (pass == kDefaultAdminPass) {
+        return 'كلمة مرور الحساب التجريبي افتراضية — غيّرها من حساب المدير أولاً';
+      }
+      await LoginGuard.clear();
+      await AdminSession.start(name);
+      notifyListeners();
+      return null;
+    }
     if (pass == kDefaultAdminPass) {
       if (newPass == null) return kNeedNewPassword;
       if (!validPassword(newPass)) {
@@ -248,7 +298,7 @@ class AdminStore extends ChangeNotifier {
   }
 
   Future<String?> changePassword(String newPass) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final me = currentUser;
     final entry = me == null ? null : _userEntry(me);
     if (entry == null) return 'انتهت الجلسة — سجّل الدخول من جديد';
@@ -270,6 +320,7 @@ class AdminStore extends ChangeNotifier {
 
   // ======================= الكتابة في core =======================
   Future<void> _patchCore(Map<String, dynamic> body, {String log = '', String icon = 'fa-solid fa-pen'}) async {
+    _guard();
     final b = Map<String, dynamic>.from(body);
     if (log.isNotEmpty) {
       final aid = uid();
@@ -296,7 +347,7 @@ class AdminStore extends ChangeNotifier {
     if (b.isEmpty) return;
     b['_by'] = _client;
     b['_rev'] = DateTime.now().millisecondsSinceEpoch;
-    await Api.fbPatch(Cfg.fbCore, b);
+    await _fbPatch(Cfg.fbCore, b);
     // تحديث واجهة الزائر في هذا الجهاز فوراً
     unawaited(AppState.I.checkRemote());
   }
@@ -326,7 +377,7 @@ class AdminStore extends ChangeNotifier {
 
   Future<void> _bumpPublic(String code) async {
     final ver = DateTime.now().millisecondsSinceEpoch;
-    await Api.fbPut('${Cfg.fbPublicVersion}/$code', {
+    await _fbPut('${Cfg.fbPublicVersion}/$code', {
       'version': ver,
       'lastUpdated': DateTime.fromMillisecondsSinceEpoch(ver).toUtc().toIso8601String(),
       'count': pubCards[code]?.length ?? 0,
@@ -340,7 +391,7 @@ class AdminStore extends ChangeNotifier {
   Future<void> _removeCardFrom(String cat, String id) async {
     if (isPublicCat(cat)) {
       final code = pubCode(cat)!;
-      await Api.fbPatch('${Cfg.fbPublic}/$code', <String, dynamic>{id: null});
+      await _fbPatch('${Cfg.fbPublic}/$code', <String, dynamic>{id: null});
       pubCards[code]?.remove(id);
       await _bumpPublic(code);
     } else {
@@ -351,7 +402,7 @@ class AdminStore extends ChangeNotifier {
 
   /// حفظ عنصر جديد أو معدّل. oldKey = قسمه السابق عند التعديل.
   Future<String?> saveCard(Json card, {String oldKey = '', bool isNew = false}) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final id = safeKey(card['id']);
     final key = str(card['key']);
     final name = str(card['name']);
@@ -362,7 +413,7 @@ class AdminStore extends ChangeNotifier {
       final icon = isNew ? 'fa-solid fa-plus' : 'fa-solid fa-pen';
       if (isPublicCat(key)) {
         final code = pubCode(key)!;
-        await Api.fbPatch('${Cfg.fbPublic}/$code', <String, dynamic>{id: card});
+        await _fbPatch('${Cfg.fbPublic}/$code', <String, dynamic>{id: card});
         pubCards[code]![id] = card;
         await _bumpPublic(code);
         await _patchCore({}, log: logText, icon: icon);
@@ -381,7 +432,7 @@ class AdminStore extends ChangeNotifier {
   }
 
   Future<String?> deleteCard(Json card) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final id = safeKey(card['id']);
     final key = str(card['key']);
     try {
@@ -410,7 +461,7 @@ class AdminStore extends ChangeNotifier {
   }
 
   Future<String?> _updateRequest(String id, void Function(Json r) change, {String log = ''}) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final k = _reqKey(id);
     if (k == null) return 'الطلب غير موجود';
     final r = Map<String, dynamic>.from(requests[k]!);
@@ -434,7 +485,7 @@ class AdminStore extends ChangeNotifier {
       _updateRequest(id, (r) => r['read'] = r['read'] != true);
 
   Future<String?> markAllRead() async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final body = <String, dynamic>{};
     requests.forEach((k, r) {
       if (r['read'] != true) body['requests/$k/read'] = true;
@@ -453,7 +504,7 @@ class AdminStore extends ChangeNotifier {
   }
 
   Future<String?> deleteRequest(String id) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final k = _reqKey(id);
     if (k == null) return null;
     final r = requests[k]!;
@@ -462,9 +513,9 @@ class AdminStore extends ChangeNotifier {
       await _patchCore({'requests/$k': null, '_empty/requests': rest.isEmpty},
           log: 'حذف طلب: ${str(r['type'])} · ${str(r['about'])}', icon: 'fa-regular fa-trash-can');
       requests.remove(k);
-      unawaited(Api.fbDelete('${Cfg.fbRequestsPrivate}/${safeKey(id)}').catchError((_) {}));
+      unawaited(_fbDelete('${Cfg.fbRequestsPrivate}/${safeKey(id)}').catchError((_) {}));
       if (r['photo'] == true) {
-        unawaited(Api.fbDelete('${Cfg.fbRequestMedia}/${safeKey(id)}').catchError((_) {}));
+        unawaited(_fbDelete('${Cfg.fbRequestMedia}/${safeKey(id)}').catchError((_) {}));
       }
       notifyListeners();
       return null;
@@ -475,6 +526,7 @@ class AdminStore extends ChangeNotifier {
 
   /// البيانات الخاصة للطلب (الاسم والهاتف...) والصورة المرفقة إن وُجدت
   Future<(Json?, Uint8List?)> requestDetails(Json r) async {
+    if (isDemo) return (null, null);
     final id = safeKey(r['id']);
     Json? priv;
     Uint8List? img;
@@ -495,7 +547,7 @@ class AdminStore extends ChangeNotifier {
   List<Json> get notificationList => notifications.values.toList()..sort(_byAtDesc);
 
   Future<String?> saveNotification({String? id, required String title, required String text}) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final t = clip(title, 150);
     final x = clip(text, 1500);
     if (t.isEmpty || x.isEmpty) return 'العنوان والنص مطلوبان';
@@ -519,7 +571,7 @@ class AdminStore extends ChangeNotifier {
   }
 
   Future<String?> toggleNotification(String id) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final cur = notifications[id];
     if (cur == null) return null;
     final n = Map<String, dynamic>.from(cur)..['active'] = cur['active'] == false;
@@ -534,7 +586,7 @@ class AdminStore extends ChangeNotifier {
   }
 
   Future<String?> deleteNotification(String id) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final cur = notifications[id];
     if (cur == null) return null;
     final rest = Map<String, Json>.from(notifications)..remove(id);
@@ -553,7 +605,7 @@ class AdminStore extends ChangeNotifier {
   String setting(String k) => str(settings[k]);
 
   Future<String?> saveSettings(Map<String, dynamic> changes, {String log = 'تعديل إعدادات الموقع'}) async {
-    if (legacyFormat) return _legacyMsg;
+    if (writeBlock != null) return writeBlock;
     final body = <String, dynamic>{};
     changes.forEach((k, v) => body['settings/$k'] = v);
     if (body.isEmpty) return null;
@@ -600,6 +652,7 @@ class AdminStore extends ChangeNotifier {
   /// رفع ملف إلى Supabase — نفس supaUploadBlob في نسخة الويب: <folder>/<السنة>/<الاسم>-<لاحقة>.<الامتداد>
   Future<(String, String)> supaUpload(Uint8List bytes, String name,
       {String folder = 'img', String suffix = '', String? contentType}) async {
+    _guard();
     final type = contentType ?? 'image/${_imgType(bytes)}';
     var ext = type.split('/').last.replaceAll(RegExp(r'[^a-z0-9]', caseSensitive: false), '');
     if (ext == 'jpeg') ext = 'jpg';
@@ -643,7 +696,7 @@ class AdminStore extends ChangeNotifier {
   }
 
   Future<bool> supaDeletePath(String path) async {
-    if (path.isEmpty) return false;
+    if (path.isEmpty || isDemo) return false;
     try {
       final r = await http
           .delete(Uri.parse('$supaBase/storage/v1/object/$supaBucket/$path'), headers: _supaHeaders())
@@ -675,7 +728,7 @@ class AdminStore extends ChangeNotifier {
       'n': clip(fileName, 80),
     };
     try {
-      await Api.fbPut('${Cfg.fbRoot}/mediaIndex/$id', rec);
+      await _fbPut('${Cfg.fbRoot}/mediaIndex/$id', rec);
       mediaIndex?[id] = rec;
     } catch (_) {}
     return url;

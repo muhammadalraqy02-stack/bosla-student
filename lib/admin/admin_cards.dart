@@ -66,6 +66,7 @@ class _AdminCardsScreenState extends State<AdminCardsScreen> {
   }
 
   Future<void> _delete(Json c) async {
+    if (demoBlocked()) return;
     final ok = await confirmDialog(context, 'حذف "${str(c['name'])}" نهائياً؟', ok: 'حذف', danger: true);
     if (!ok) return;
     final r = await AdminStore.I.deleteCard(c);
@@ -278,7 +279,7 @@ class _AdminCardEditorState extends State<AdminCardEditor> {
   }
 
   Future<void> _addImage(ImageSource src) async {
-    if (_uploading) return;
+    if (_uploading || demoBlocked()) return;
     try {
       final x = await _picker.pickImage(source: src, maxWidth: 1600, maxHeight: 1600, imageQuality: 72);
       if (x == null) return;
@@ -418,6 +419,7 @@ class _AdminCardEditorState extends State<AdminCardEditor> {
   Future<void> _delete() async {
     final c = widget.card;
     if (c == null) return;
+    if (demoBlocked()) return;
     final ok = await confirmDialog(context, 'حذف "${str(c['name'])}" نهائياً؟', ok: 'حذف', danger: true);
     if (!ok) return;
     setState(() => _busy = true);
