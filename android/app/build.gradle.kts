@@ -5,6 +5,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// نسخة Google Play: تُبنى باسم حزمة التطبيق المنشور على المتجر (BOSLA_PLAY_ID=apli4165806.uog)
+// وبدون توقيع، ثم تُوقَّع بمفتاح التحميل (upload key) خارج GitHub. بدونه: نسخة APK التجريبية كالمعتاد.
+val playAppId: String? = System.getenv("BOSLA_PLAY_ID")?.takeIf { it.isNotBlank() }
+val appId: String = playAppId ?: "com.bosla2026.app"
+
 android {
     namespace = "com.bosla2026.app"
     compileSdk = flutter.compileSdkVersion
@@ -18,7 +23,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.bosla2026.app"
+        applicationId = appId
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -41,7 +46,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("test")
+            signingConfig = if (playAppId != null) null else signingConfigs.getByName("test")
         }
     }
 }
@@ -62,6 +67,8 @@ dependencies {
 
 // الإشعارات الفورية (FCM): تُفعَّل تلقائياً عند إضافة android/app/google-services.json من Firebase Console.
 // بدون الملف يُبنى التطبيق طبيعياً وتُتجاوز الإشعارات الفورية.
-if (file("google-services.json").exists()) {
+// يُطبَّق فقط إذا كان الملف يحتوي تطبيقاً بنفس اسم الحزمة (وإلا يفشل البناء)
+val googleServices = file("google-services.json")
+if (googleServices.exists() && googleServices.readText().contains("\"$appId\"")) {
     apply(plugin = "com.google.gms.google-services")
 }

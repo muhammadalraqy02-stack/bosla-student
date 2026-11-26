@@ -71,6 +71,18 @@ jobs:
         run: flutter build apk --release
         continue-on-error: true
 
+      # نسخة Google Play (AAB) باسم حزمة التطبيق على المتجر، غير موقّعة —
+      # تُوقَّع بمفتاح التحميل خارج GitHub لأن المستودع عام. رقم الإصدار يزيد مع كل بناء.
+      - name: Build Play bundle (AAB)
+        id: aab
+        if: steps.release.outcome == 'success'
+        env:
+          BOSLA_PLAY_ID: apli4165806.uog
+        run: |
+          flutter build appbundle --release --build-number=$((1000000 + ${{ github.run_number }}))
+          ls -la build/app/outputs/bundle/release/
+        continue-on-error: true
+
       - name: Upload APKs
         if: always()
         uses: actions/upload-artifact@v4
@@ -103,7 +115,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk bosla-student.apk
-          gh release create "build-${{ github.run_number }}" bosla-student.apk \
+          FILES="bosla-student.apk"
+          if [ -f build/app/outputs/bundle/release/app-release.aab ]; then
+            cp build/app/outputs/bundle/release/app-release.aab bosla-student-play-unsigned.aab
+            FILES="$FILES bosla-student-play-unsigned.aab"
+          fi
+          gh release create "build-${{ github.run_number }}" $FILES \
             --target "$GITHUB_SHA" \
             --title "بوصلة الطالب — بناء ${{ github.run_number }}" \
             --notes "$(flutter --version | head -1) — commit ${GITHUB_SHA::7}" \
